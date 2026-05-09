@@ -121,6 +121,24 @@ public class RoomService {
      * @param roomCode 房间码
      * @return 房间
      */
+    /**
+     * 聊天模块使用的玩家身份校验入口。
+     *
+     * <p>chat 模块只关心“这个 token 是不是当前房间里的玩家，以及房间是否已经进入聊天阶段”。
+     * 具体怎么找房间、怎么校验 token，仍然放在 room 模块内部，避免其他模块绕过房间规则。</p>
+     *
+     * @param roomCode 房间码
+     * @param playerToken 玩家凭证
+     * @return 已通过校验的玩家
+     */
+    public synchronized Player requireChatParticipant(String roomCode, String playerToken) {
+        Room room = findRoom(roomCode);
+        if (room.status() != RoomStatus.CHATTING) {
+            throw new RoomException(RoomErrorCode.ROOM_NOT_CHATTING, "Room is not chatting.");
+        }
+        return findPlayer(room, playerToken);
+    }
+
     private Room findRoom(String roomCode) {
         return roomRepository.findByCode(roomCode)
                 .orElseThrow(() -> new RoomException(RoomErrorCode.ROOM_NOT_FOUND, "Room not found."));
