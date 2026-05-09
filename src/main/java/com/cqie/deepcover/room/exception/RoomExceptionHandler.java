@@ -17,7 +17,7 @@ public class RoomExceptionHandler {
     @ExceptionHandler(RoomException.class)
     public ResponseEntity<RoomDtos.ErrorResponse> handleRoomException(RoomException exception) {
         HttpStatus status = switch (exception.getErrorCode()) {
-            case ROOM_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case ROOM_NOT_FOUND, TIMER_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case FORBIDDEN -> HttpStatus.FORBIDDEN;
             case ROOM_NOT_JOINABLE, ROOM_NOT_CHATTING, ROOM_FULL, NOT_ENOUGH_PLAYERS,
                  PLAYER_NOT_FOUND, INVALID_CHAT_MESSAGE -> HttpStatus.BAD_REQUEST;

@@ -8,6 +8,7 @@ package com.cqie.deepcover.room.enums;
  */
 public enum RoomErrorCode {
     ROOM_NOT_FOUND,
+    TIMER_NOT_FOUND,
     ROOM_NOT_JOINABLE,
     ROOM_NOT_CHATTING,
     ROOM_FULL,
