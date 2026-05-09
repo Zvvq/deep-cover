@@ -9,7 +9,10 @@ import com.cqie.deepcover.room.record.Player;
 import com.cqie.deepcover.room.record.PlayerSnapshot;
 import com.cqie.deepcover.room.record.RoomCreateResult;
 import com.cqie.deepcover.room.record.RoomJoinResult;
+import com.cqie.deepcover.room.record.RoomStartedEvent;
 import com.cqie.deepcover.room.record.RoomSnapshot;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -26,9 +29,17 @@ public class RoomService {
     private static final int MIN_HUMAN_PLAYERS_TO_START = 2;
 
     private final RoomRepository roomRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public RoomService(RoomRepository roomRepository) {
+        this(roomRepository, event -> {
+        });
+    }
+
+    @Autowired
+    public RoomService(RoomRepository roomRepository, ApplicationEventPublisher eventPublisher) {
         this.roomRepository = roomRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -91,6 +102,7 @@ public class RoomService {
         }
         room.markChatting();
         roomRepository.save(room);
+        eventPublisher.publishEvent(new RoomStartedEvent(roomCode));
         return snapshot(room);
     }
 
@@ -116,11 +128,6 @@ public class RoomService {
         return snapshot(room);
     }
 
-    /**
-     * 根据房间码查找房间
-     * @param roomCode 房间码
-     * @return 房间
-     */
     /**
      * 聊天模块使用的玩家身份校验入口。
      *
