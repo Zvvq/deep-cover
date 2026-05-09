@@ -7,11 +7,12 @@
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<main class="app-shell">
+<main class="app-shell" data-room-api="/api/rooms" data-ws-entry="/ws">
     <section class="hero">
         <div>
             <p class="eyebrow">Deep Cover</p>
-            <p class="subtitle">先跑通创建、加入、开始和离开流程；聊天与投票模块接入后会在这里继续扩展。</p>
+            <h1>卧底群聊</h1>
+            <p class="subtitle">创建房间、邀请玩家、开始后进入实时聊天。</p>
         </div>
         <div class="status-pill" id="connectionStatus">未进入房间</div>
     </section>
@@ -21,7 +22,7 @@
             <div class="panel-heading">
                 <div>
                     <h2>进入游戏</h2>
-                    <p>当前页面适配 `/api/rooms` 相关接口。</p>
+                    <p>房主创建房间，其他玩家输入房间号加入。</p>
                 </div>
             </div>
 
@@ -69,9 +70,16 @@
                 <ul class="player-list" id="playerList"></ul>
             </div>
 
-            <div class="section-block next-module">
-                <h3>后续模块</h3>
-                <p>当前后端还没有聊天、投票和 AI Agent 接口。房间开始后会进入 CHATTING 状态，后续可以在这里接入 WebSocket 聊天区。</p>
+            <div class="section-block chat-section">
+                <div class="chat-heading">
+                    <h3>聊天</h3>
+                    <span id="chatStatus">等待开始</span>
+                </div>
+                <ul class="chat-list" id="chatList"></ul>
+                <form class="chat-form" id="chatForm">
+                    <input id="chatInput" maxlength="300" autocomplete="off" placeholder="输入消息">
+                    <button type="submit">发送</button>
+                </form>
             </div>
 
             <div class="room-actions">
