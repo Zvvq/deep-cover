@@ -9,8 +9,10 @@ package com.cqie.deepcover.room.enums;
 public enum RoomErrorCode {
     ROOM_NOT_FOUND,
     ROOM_NOT_JOINABLE,
+    ROOM_NOT_CHATTING,
     ROOM_FULL,
     FORBIDDEN,
     NOT_ENOUGH_PLAYERS,
-    PLAYER_NOT_FOUND
+    PLAYER_NOT_FOUND,
+    INVALID_CHAT_MESSAGE
 }
