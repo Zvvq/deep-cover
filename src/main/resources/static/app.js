@@ -1,488 +1,687 @@
-const API_BASE = "/api/rooms";
-const PLAYER_TOKEN_HEADER = "X-Player-Token";
-const SESSION_KEY = "deep-cover-room-session";
+/* ============================================================
+   Deep Cover — Frontend Application
+   Room creation · Chat (STOMP) · Game Timer
+   ============================================================ */
 
-const state = {
+(function () {
+  'use strict';
+
+  // ==================== STATE ====================
+  const state = {
     roomCode: null,
     playerId: null,
     playerToken: null,
-    snapshot: null,
-    chat: {
-        socket: null,
-        roomCode: null,
-        connected: false,
-        buffer: "",
-        subscriptionId: null,
-    },
-};
+    stompClient: null,
+    subscription: null,
+    timerInterval: null,
+    timerEndsAt: null,
+  };
 
-const elements = {
-    connectionStatus: document.querySelector("#connectionStatus"),
-    lobbyPanel: document.querySelector("#lobbyPanel"),
-    roomPanel: document.querySelector("#roomPanel"),
-    createRoomButton: document.querySelector("#createRoomButton"),
-    joinRoomForm: document.querySelector("#joinRoomForm"),
-    roomCodeInput: document.querySelector("#roomCodeInput"),
-    roomTitle: document.querySelector("#roomTitle"),
-    roomSubtitle: document.querySelector("#roomSubtitle"),
-    roomStatus: document.querySelector("#roomStatus"),
-    playerCount: document.querySelector("#playerCount"),
-    myRole: document.querySelector("#myRole"),
-    playerList: document.querySelector("#playerList"),
-    startRoomButton: document.querySelector("#startRoomButton"),
-    leaveRoomButton: document.querySelector("#leaveRoomButton"),
-    refreshButton: document.querySelector("#refreshButton"),
-    chatStatus: document.querySelector("#chatStatus"),
-    chatList: document.querySelector("#chatList"),
-    chatForm: document.querySelector("#chatForm"),
-    chatInput: document.querySelector("#chatInput"),
-    messageArea: document.querySelector("#messageArea"),
-};
+  function persist() {
+    if (state.roomCode) localStorage.setItem('dc_roomCode', state.roomCode);
+    else localStorage.removeItem('dc_roomCode');
+    if (state.playerId) localStorage.setItem('dc_playerId', state.playerId);
+    else localStorage.removeItem('dc_playerId');
+    if (state.playerToken) localStorage.setItem('dc_playerToken', state.playerToken);
+    else localStorage.removeItem('dc_playerToken');
+  }
 
-init();
+  function restore() {
+    state.roomCode = localStorage.getItem('dc_roomCode') || null;
+    state.playerId = localStorage.getItem('dc_playerId') || null;
+    state.playerToken = localStorage.getItem('dc_playerToken') || null;
+  }
 
-function init() {
-    restoreSession();
-    bindEvents();
-    render();
-
-    if (state.roomCode) {
-        refreshSnapshot();
-    }
-}
-
-function bindEvents() {
-    elements.createRoomButton.addEventListener("click", createRoom);
-    elements.joinRoomForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        joinRoom(elements.roomCodeInput.value);
-    });
-    elements.startRoomButton.addEventListener("click", startRoom);
-    elements.leaveRoomButton.addEventListener("click", leaveRoom);
-    elements.refreshButton.addEventListener("click", refreshSnapshot);
-    elements.chatForm.addEventListener("submit", sendChatMessage);
-
-    elements.roomCodeInput.addEventListener("input", () => {
-        elements.roomCodeInput.value = elements.roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    });
-}
-
-async function createRoom() {
-    await runAction(async () => {
-        const result = await request(API_BASE, { method: "POST" });
-        applySession(result);
-        showToast(`房间 ${result.roomCode} 创建成功`);
-    });
-}
-
-async function joinRoom(roomCode) {
-    const normalizedCode = roomCode.trim().toUpperCase();
-    if (!normalizedCode) {
-        showToast("请输入房间号", true);
-        return;
-    }
-
-    await runAction(async () => {
-        const result = await request(`${API_BASE}/${normalizedCode}/join`, { method: "POST" });
-        applySession(result);
-        showToast(`已加入房间 ${result.roomCode}`);
-    });
-}
-
-async function startRoom() {
-    if (!requireSession()) {
-        return;
-    }
-
-    await runAction(async () => {
-        state.snapshot = await request(`${API_BASE}/${state.roomCode}/start`, {
-            method: "POST",
-            headers: tokenHeader(),
-        });
-        persistSession();
-        render();
-        showToast("房间已开始");
-    });
-}
-
-async function leaveRoom() {
-    if (!requireSession()) {
-        return;
-    }
-
-    await runAction(async () => {
-        const snapshot = await request(`${API_BASE}/${state.roomCode}/leave`, {
-            method: "POST",
-            headers: tokenHeader(),
-        });
-        const destroyed = snapshot.status === "DESTROYED";
-        clearSession();
-        render();
-        showToast(destroyed ? "房主已离开，房间已销毁" : "已离开房间");
-    });
-}
-
-async function refreshSnapshot() {
-    if (!state.roomCode) {
-        return;
-    }
-
-    await runAction(async () => {
-        state.snapshot = await request(`${API_BASE}/${state.roomCode}/snapshot`);
-        persistSession();
-        render();
-    });
-}
-
-function sendChatMessage(event) {
-    event.preventDefault();
-    if (!requireSession() || state.snapshot?.status !== "CHATTING") {
-        showToast("游戏开始后才能聊天", true);
-        return;
-    }
-    ensureChatConnection();
-
-    const content = elements.chatInput.value.trim();
-    if (!content) {
-        return;
-    }
-    if (!state.chat.connected) {
-        showToast("聊天连接还未就绪", true);
-        return;
-    }
-
-    sendStompFrame("SEND", {
-        destination: `/app/rooms/${state.roomCode}/chat`,
-        "content-type": "application/json",
-    }, JSON.stringify({
-        playerToken: state.playerToken,
-        content,
-    }));
-    elements.chatInput.value = "";
-}
-
-async function request(url, options = {}) {
-    const response = await fetch(url, {
-        ...options,
-        headers: {
-            "Accept": "application/json",
-            ...(options.headers || {}),
-        },
-    });
-
-    const text = await response.text();
-    const body = text ? JSON.parse(text) : null;
-
-    if (!response.ok) {
-        throw new Error(body?.message || body?.errorCode || "请求失败");
-    }
-
-    return body;
-}
-
-async function runAction(action) {
-    setButtonsDisabled(true);
-    try {
-        await action();
-    } catch (error) {
-        showToast(error.message || "操作失败", true);
-    } finally {
-        setButtonsDisabled(false);
-    }
-}
-
-function applySession(result) {
-    disconnectChat();
-    state.roomCode = result.roomCode;
-    state.playerId = result.playerId;
-    state.playerToken = result.playerToken;
-    state.snapshot = result.snapshot;
-    persistSession();
-    render();
-}
-
-function restoreSession() {
-    const rawSession = localStorage.getItem(SESSION_KEY);
-    if (!rawSession) {
-        return;
-    }
-
-    try {
-        const saved = JSON.parse(rawSession);
-        state.roomCode = saved.roomCode;
-        state.playerId = saved.playerId;
-        state.playerToken = saved.playerToken;
-        state.snapshot = saved.snapshot;
-    } catch {
-        localStorage.removeItem(SESSION_KEY);
-    }
-}
-
-function persistSession() {
-    localStorage.setItem(SESSION_KEY, JSON.stringify({
-        roomCode: state.roomCode,
-        playerId: state.playerId,
-        playerToken: state.playerToken,
-        snapshot: state.snapshot,
-    }));
-}
-
-function clearSession() {
-    disconnectChat();
+  function clearState() {
     state.roomCode = null;
     state.playerId = null;
     state.playerToken = null;
-    state.snapshot = null;
-    elements.chatList.innerHTML = "";
-    localStorage.removeItem(SESSION_KEY);
-}
+    persist();
+  }
 
-function render() {
-    const inRoom = Boolean(state.roomCode && state.snapshot);
-    elements.lobbyPanel.hidden = inRoom;
-    elements.roomPanel.hidden = !inRoom;
-    elements.connectionStatus.textContent = inRoom ? `房间 ${state.roomCode}` : "未进入房间";
+  // ==================== DOM REFS ====================
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => document.querySelectorAll(sel);
 
-    if (!inRoom) {
-        updateChatState(false);
-        return;
+  // Views
+  const homeView = $('#home-view');
+  const waitingView = $('#waiting-view');
+  const gameView = $('#game-view');
+
+  // Home
+  const btnCreate = $('#btn-create');
+  const btnJoin = $('#btn-join');
+  const roomCodeInput = $('#room-code-input');
+  const joinForm = $('#join-form');
+  const joinError = $('#join-error');
+  const homeStatus = $('#home-status');
+
+  // Waiting
+  const btnLeaveWaiting = $('#btn-leave-waiting');
+  const waitingRoomCode = $('#waiting-room-code');
+  const waitingRoomStatus = $('#waiting-room-status');
+  const waitingPlayerCount = $('#waiting-player-count');
+  const waitingPlayerList = $('#waiting-player-list');
+  const waitingHint = $('#waiting-hint');
+  const btnStartGame = $('#btn-start-game');
+
+  // Game
+  const gameRoomCode = $('#game-room-code');
+  const timerValue = $('#timer-value');
+  const timerDisplay = $('#timer-display');
+  const gamePhaseBadge = $('#game-phase-badge');
+  const chatMessages = $('#chat-messages');
+  const chatForm = $('#chat-form');
+  const chatInput = $('#chat-input');
+  const btnSend = $('#btn-send');
+  const gamePlayerCount = $('#game-player-count');
+  const gamePlayerList = $('#game-player-list');
+
+  // ==================== HELPERS ====================
+  function formatTime(seconds) {
+    if (seconds <= 0) return '00:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  function formatISOTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function playerLabel(player) {
+    let label = '玩家 ' + (player.id || '').substring(0, 4);
+    if (player.host) label += ' (房主)';
+    return label;
+  }
+
+  function isHost(playerId) {
+    return state.playerId === playerId;
+  }
+
+  // ==================== TOAST ====================
+  let toastTimer = null;
+  function toast(msg, isError) {
+    const old = $('.toast');
+    if (old) old.remove();
+    if (toastTimer) clearTimeout(toastTimer);
+
+    const el = document.createElement('div');
+    el.className = 'toast' + (isError ? ' error' : '');
+    el.textContent = msg;
+    document.body.appendChild(el);
+
+    toastTimer = setTimeout(function () {
+      el.remove();
+      toastTimer = null;
+    }, 3500);
+  }
+
+  // ==================== API ====================
+  const API = {
+    async request(method, path, body) {
+      const headers = { 'Content-Type': 'application/json' };
+      if (state.playerToken) headers['X-Player-Token'] = state.playerToken;
+
+      const options = { method, headers };
+      if (body) options.body = JSON.stringify(body);
+
+      let res;
+      try {
+        res = await fetch(path, options);
+      } catch (e) {
+        throw new Error('网络连接失败，请检查网络');
+      }
+
+      if (!res.ok) {
+        let errData;
+        try { errData = await res.json(); } catch (_) { /* ignore */ }
+        const msg = (errData && errData.message) ? errData.message : ('请求失败 (' + res.status + ')');
+        const err = new Error(msg);
+        err.code = errData && errData.errorCode;
+        throw err;
+      }
+
+      if (res.status === 204) return null;
+      return res.json();
+    },
+
+    createRoom() {
+      return API.request('POST', '/api/rooms');
+    },
+
+    joinRoom(roomCode) {
+      return API.request('POST', '/api/rooms/' + encodeURIComponent(roomCode) + '/join');
+    },
+
+    startRoom() {
+      return API.request('POST', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/start');
+    },
+
+    leaveRoom() {
+      return API.request('POST', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/leave');
+    },
+
+    snapshot() {
+      return API.request('GET', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/snapshot');
+    },
+
+    messages() {
+      return API.request('GET', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/messages');
+    },
+
+    timer() {
+      return API.request('GET', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/timer');
+    },
+  };
+
+  // ==================== VIEW SWITCHING ====================
+  function showView(view) {
+    [homeView, waitingView, gameView].forEach(function (v) {
+      v.hidden = true;
+    });
+    view.hidden = false;
+  }
+
+  // ==================== HOME ====================
+  function initHome() {
+    btnCreate.disabled = false;
+    btnCreate.addEventListener('click', handleCreate);
+    joinForm.addEventListener('submit', handleJoin);
+    roomCodeInput.addEventListener('input', function () {
+      var val = roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      roomCodeInput.value = val;
+      btnJoin.disabled = val.length !== 6;
+      joinError.hidden = true;
+    });
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    btnCreate.disabled = true;
+    homeStatus.hidden = false;
+    homeStatus.textContent = '正在创建房间…';
+
+    try {
+      var data = await API.createRoom();
+      onRoomJoined(data);
+    } catch (err) {
+      homeStatus.textContent = '';
+      homeStatus.hidden = true;
+      btnCreate.disabled = false;
+      toast(err.message, true);
     }
+  }
 
-    const players = state.snapshot.players || [];
-    const me = players.find((player) => player.id === state.playerId);
+  async function handleJoin(e) {
+    e.preventDefault();
+    var code = roomCodeInput.value.trim().toUpperCase();
+    if (code.length !== 6) return;
 
-    elements.roomTitle.textContent = `房间 ${state.roomCode}`;
-    elements.roomSubtitle.textContent = subtitleForStatus(state.snapshot.status);
-    elements.roomStatus.textContent = state.snapshot.status;
-    elements.playerCount.textContent = String(players.length);
-    elements.myRole.textContent = me?.host ? "房主" : "玩家";
-    elements.startRoomButton.hidden = !me?.host;
-    elements.startRoomButton.disabled = state.snapshot.status !== "WAITING" || players.length < 2;
+    btnJoin.disabled = true;
+    joinError.hidden = true;
 
-    elements.playerList.innerHTML = "";
-    players.forEach((player, index) => {
-        const item = document.createElement("li");
-        item.className = "player-card";
-        item.innerHTML = `
-            <strong>${playerLabel(player, index)}</strong>
-            <span>${player.host ? "房主" : "玩家"} · ${player.alive ? "在线" : "已淘汰"}</span>
-        `;
-        elements.playerList.appendChild(item);
+    try {
+      var data = await API.joinRoom(code);
+      onRoomJoined(data);
+    } catch (err) {
+      joinError.textContent = err.message;
+      joinError.hidden = false;
+      btnJoin.disabled = false;
+    }
+  }
+
+  function onRoomJoined(data) {
+    state.roomCode = data.roomCode;
+    state.playerId = data.playerId;
+    state.playerToken = data.playerToken;
+    persist();
+    homeStatus.hidden = true;
+    homeStatus.textContent = '';
+    btnCreate.disabled = false;
+    btnJoin.disabled = false;
+    roomCodeInput.value = '';
+    connectWebSocket(data.roomCode);
+    renderWaiting(data.snapshot);
+    showView(waitingView);
+  }
+
+  // ==================== WAITING ROOM ====================
+  function initWaiting() {
+    btnLeaveWaiting.addEventListener('click', handleLeaveWaiting);
+    btnStartGame.addEventListener('click', handleStartGame);
+  }
+
+  function renderWaiting(snapshot) {
+    waitingRoomCode.textContent = snapshot.roomCode;
+    waitingRoomStatus.textContent = snapshot.status === 'WAITING' ? '等待中' : snapshot.status;
+    waitingRoomStatus.classList.toggle('live', snapshot.status === 'WAITING');
+
+    var players = snapshot.players || [];
+    waitingPlayerCount.textContent = '(' + players.length + '/8)';
+
+    waitingPlayerList.innerHTML = '';
+    players.forEach(function (p) {
+      var li = document.createElement('li');
+      li.className = 'player-item';
+
+      var dot = document.createElement('span');
+      dot.className = 'player-dot';
+      dot.style.backgroundColor = isHost(p.id) ? '#22C55E' : '#64748B';
+
+      var name = document.createElement('span');
+      name.className = 'player-name';
+      name.textContent = playerLabel(p);
+
+      li.appendChild(dot);
+      li.appendChild(name);
+
+      if (p.host) {
+        var badge = document.createElement('span');
+        badge.className = 'player-badge';
+        badge.textContent = '房主';
+        li.appendChild(badge);
+      }
+      if (isHost(p.id)) {
+        var youBadge = document.createElement('span');
+        youBadge.className = 'player-badge you';
+        youBadge.textContent = '你';
+        li.appendChild(youBadge);
+      }
+
+      waitingPlayerList.appendChild(li);
     });
 
-    updateChatState(state.snapshot.status === "CHATTING");
-}
+    // Show start button only for host when >= 2 players
+    var amHost = players.some(function (p) { return p.host && isHost(p.id); });
+    var canStart = amHost && players.length >= 2;
+    btnStartGame.hidden = !canStart;
+    waitingHint.hidden = !amHost || players.length >= 2;
+  }
 
-function updateChatState(chatting) {
-    elements.chatInput.disabled = !chatting;
-    elements.chatForm.querySelector("button").disabled = !chatting;
-    if (!chatting) {
-        elements.chatStatus.textContent = "等待开始";
-        disconnectChat();
-        return;
+  async function handleLeaveWaiting() {
+    try {
+      await API.leaveRoom();
+    } catch (_) { /* ignore — room may already be gone */ }
+    disconnectWebSocket();
+    clearState();
+    showView(homeView);
+  }
+
+  async function handleStartGame() {
+    btnStartGame.disabled = true;
+    try {
+      var snapshot = await API.startRoom();
+      btnStartGame.disabled = false;
+      // Game started — snapshot has CHATTING status
+      enterGame(snapshot);
+    } catch (err) {
+      btnStartGame.disabled = false;
+      toast(err.message, true);
+    }
+  }
+
+  // ==================== GAME VIEW ====================
+  function initGame() {
+    chatForm.addEventListener('submit', handleSendChat);
+    chatInput.addEventListener('input', function () {
+      btnSend.disabled = chatInput.value.trim().length === 0;
+    });
+  }
+
+  function enterGame(snapshot) {
+    showView(gameView);
+    gameRoomCode.textContent = snapshot.roomCode;
+    renderGamePlayers(snapshot.players || []);
+
+    // Load chat history
+    loadChatHistory();
+
+    // Load timer
+    loadTimer();
+
+    // Clear chat input
+    chatInput.value = '';
+    btnSend.disabled = true;
+  }
+
+  function renderGamePlayers(players) {
+    gamePlayerCount.textContent = '(' + players.length + ')';
+    gamePlayerList.innerHTML = '';
+    players.forEach(function (p) {
+      var li = document.createElement('li');
+      li.className = 'player-item';
+
+      var dot = document.createElement('span');
+      dot.className = 'player-dot';
+      dot.style.backgroundColor = p.alive ? (isHost(p.id) ? '#22C55E' : '#64748B') : '#DC2626';
+
+      var name = document.createElement('span');
+      name.className = 'player-name';
+      name.textContent = playerLabel(p);
+
+      var status = document.createElement('span');
+      status.className = 'player-status-icon ' + (p.alive ? 'alive' : 'dead');
+      status.textContent = p.alive ? '存活' : '出局';
+
+      li.appendChild(dot);
+      li.appendChild(name);
+      li.appendChild(status);
+
+      gamePlayerList.appendChild(li);
+    });
+  }
+
+  async function loadChatHistory() {
+    try {
+      var messages = await API.messages();
+      chatMessages.innerHTML = '';
+      if (!messages || messages.length === 0) {
+        chatMessages.innerHTML = '<p class="chat-placeholder">暂无消息，开始讨论吧</p>';
+      } else {
+        messages.forEach(renderChatMessage);
+      }
+      scrollChat();
+    } catch (err) {
+      chatMessages.innerHTML = '<p class="chat-placeholder">加载消息失败</p>';
+    }
+  }
+
+  function renderChatMessage(msg) {
+    // Remove placeholder if present
+    var placeholder = chatMessages.querySelector('.chat-placeholder');
+    if (placeholder) placeholder.remove();
+
+    var div = document.createElement('div');
+    var isMine = msg.senderPlayerId === state.playerId;
+    div.className = 'chat-msg' + (isMine ? ' self' : '');
+
+    var sender = document.createElement('div');
+    sender.className = 'chat-msg-sender';
+    sender.textContent = isMine ? '你' : ('玩家 ' + (msg.senderPlayerId || '').substring(0, 4));
+
+    var content = document.createElement('div');
+    content.className = 'chat-msg-content';
+    content.textContent = msg.content;
+
+    var time = document.createElement('div');
+    time.className = 'chat-msg-time';
+    time.textContent = formatISOTime(msg.createdAt);
+
+    div.appendChild(sender);
+    div.appendChild(content);
+    div.appendChild(time);
+    chatMessages.appendChild(div);
+  }
+
+  function addEventMessage(text) {
+    var placeholder = chatMessages.querySelector('.chat-placeholder');
+    if (placeholder) placeholder.remove();
+
+    var div = document.createElement('div');
+    div.className = 'chat-msg event';
+    div.textContent = text;
+    chatMessages.appendChild(div);
+    scrollChat();
+  }
+
+  function scrollChat() {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  async function handleSendChat(e) {
+    e.preventDefault();
+    var content = chatInput.value.trim();
+    if (!content) return;
+
+    // Optimistic: send via WebSocket STOMP
+    if (state.stompClient && state.stompClient.connected) {
+      state.stompClient.publish({
+        destination: '/app/rooms/' + encodeURIComponent(state.roomCode) + '/chat',
+        body: JSON.stringify({ playerToken: state.playerToken, content: content }),
+      });
+      chatInput.value = '';
+      btnSend.disabled = true;
+      chatInput.focus();
+    } else {
+      toast('连接已断开', true);
+    }
+  }
+
+  // ==================== TIMER ====================
+  async function loadTimer() {
+    try {
+      var data = await API.timer();
+      updateTimerDisplay(data);
+    } catch (err) {
+      // Timer may not exist yet
+      timerValue.textContent = '--:--';
+      gamePhaseBadge.textContent = '';
+      gamePhaseBadge.className = 'phase-badge';
+    }
+  }
+
+  function updateTimerDisplay(data) {
+    if (!data) return;
+
+    gamePhaseBadge.textContent = data.phase === 'CHATTING' ? '讨论阶段' : (data.phase === 'VOTING' ? '投票阶段' : data.phase);
+    gamePhaseBadge.className = 'phase-badge' + (data.status === 'EXPIRED' ? ' expired' : '');
+
+    if (data.status === 'EXPIRED') {
+      timerValue.textContent = '00:00';
+      timerDisplay.classList.add('danger');
+      timerDisplay.classList.remove('warning');
+      stopTimerInterval();
+      return;
     }
 
-    ensureChatConnection();
-}
-
-function subtitleForStatus(status) {
-    if (status === "WAITING") {
-        return "等待玩家加入，至少 2 名真人后房主可以开始";
+    if (data.remainingSeconds != null) {
+      state.timerEndsAt = Date.now() + data.remainingSeconds * 1000;
+      startTimerInterval();
     }
-    if (status === "CHATTING") {
-        return "游戏已开始";
-    }
-    if (status === "DESTROYED") {
-        return "房间已销毁";
-    }
-    return "房间状态已更新";
-}
+  }
 
-function playerLabel(player, index) {
-    if (player.id === state.playerId) {
-        return `我 · ${player.host ? "房主" : "玩家"}`;
+  function startTimerInterval() {
+    stopTimerInterval();
+    var tick = function () {
+      if (!state.timerEndsAt) return;
+      var remaining = Math.max(0, Math.ceil((state.timerEndsAt - Date.now()) / 1000));
+      timerValue.textContent = formatTime(remaining);
+
+      timerDisplay.classList.remove('warning', 'danger');
+      if (remaining <= 30) timerDisplay.classList.add('danger');
+      else if (remaining <= 60) timerDisplay.classList.add('warning');
+
+      if (remaining <= 0) {
+        stopTimerInterval();
+        gamePhaseBadge.textContent = '已结束';
+        gamePhaseBadge.className = 'phase-badge expired';
+      }
+    };
+    tick();
+    state.timerInterval = setInterval(tick, 250);
+  }
+
+  function stopTimerInterval() {
+    if (state.timerInterval) {
+      clearInterval(state.timerInterval);
+      state.timerInterval = null;
     }
-    return `玩家 ${index + 1}`;
-}
+  }
 
-function playerLabelById(playerId) {
-    const players = state.snapshot?.players || [];
-    const index = players.findIndex((player) => player.id === playerId);
-    if (playerId === state.playerId) {
-        return "我";
-    }
-    return index >= 0 ? `玩家 ${index + 1}` : "玩家";
-}
+  // ==================== WEBSOCKET (STOMP) ====================
+  function connectWebSocket(roomCode) {
+    disconnectWebSocket();
 
-function tokenHeader() {
-    return { [PLAYER_TOKEN_HEADER]: state.playerToken };
-}
-
-function requireSession() {
-    if (state.roomCode && state.playerToken) {
-        return true;
-    }
-    showToast("当前没有有效房间会话", true);
-    return false;
-}
-
-function setButtonsDisabled(disabled) {
-    [
-        elements.createRoomButton,
-        elements.startRoomButton,
-        elements.leaveRoomButton,
-        elements.refreshButton,
-        elements.joinRoomForm.querySelector("button"),
-    ].forEach((button) => {
-        button.disabled = disabled;
+    var wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+    var client = new StompJs.Client({
+      brokerURL: wsUrl,
+      reconnectDelay: 3000,
+      heartbeatIncoming: 10000,
+      heartbeatOutgoing: 10000,
+      debug: function (_) { /* silent */ },
     });
 
-    if (state.snapshot?.status === "CHATTING") {
-        elements.chatForm.querySelector("button").disabled = disabled;
+    client.onConnect = function () {
+      var sub = client.subscribe('/topic/rooms/' + encodeURIComponent(roomCode) + '/events', function (message) {
+        handleWebSocketEvent(message);
+      });
+      state.subscription = sub;
+    };
+
+    client.onStompError = function (frame) {
+      console.error('STOMP error:', frame.headers['message']);
+    };
+
+    client.onWebSocketClose = function () {
+      // Reconnection handled by library
+    };
+
+    client.activate();
+    state.stompClient = client;
+  }
+
+  function disconnectWebSocket() {
+    if (state.subscription) {
+      try { state.subscription.unsubscribe(); } catch (_) { /* ignore */ }
+      state.subscription = null;
     }
-}
-
-function ensureChatConnection() {
-    if (!state.roomCode || state.snapshot?.status !== "CHATTING") {
-        return;
+    if (state.stompClient) {
+      try { state.stompClient.deactivate(); } catch (_) { /* ignore */ }
+      state.stompClient = null;
     }
-    if (state.chat.socket && state.chat.roomCode === state.roomCode) {
-        return;
+    stopTimerInterval();
+  }
+
+  function handleWebSocketEvent(message) {
+    try {
+      var event = JSON.parse(message.body);
+    } catch (_) {
+      return;
     }
 
-    disconnectChat();
-    state.chat.roomCode = state.roomCode;
-    state.chat.connected = false;
-    state.chat.buffer = "";
-    elements.chatStatus.textContent = "连接中";
+    switch (event.type) {
+      case 'CHAT_MESSAGE':
+        handleChatEvent(event.payload);
+        break;
+      case 'TIMER_EXPIRED':
+        handleTimerExpired(event.payload);
+        break;
+      default:
+        // Unknown event — ignore
+    }
+  }
 
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
-    state.chat.socket = socket;
+  function handleChatEvent(payload) {
+    if (!payload) return;
+    renderChatMessage(payload);
+    scrollChat();
+  }
 
-    socket.addEventListener("open", () => {
-        sendStompFrame("CONNECT", {
-            "accept-version": "1.2",
-            "heart-beat": "0,0",
-        });
-    });
+  function handleTimerExpired(payload) {
+    addEventMessage('计时器已到期 — ' + (payload.phase === 'CHATTING' ? '讨论时间结束' : '投票时间结束'));
+    stopTimerInterval();
+    timerValue.textContent = '00:00';
+    timerDisplay.classList.add('danger');
+    gamePhaseBadge.textContent = '已结束';
+    gamePhaseBadge.className = 'phase-badge expired';
+  }
 
-    socket.addEventListener("message", (event) => {
-        state.chat.buffer += event.data;
-        const frames = state.chat.buffer.split("\0");
-        state.chat.buffer = frames.pop();
-        frames.filter(Boolean).forEach(handleStompFrame);
-    });
+  // ==================== POLLING (Waiting Room) ====================
+  // Poll for room state changes while in waiting room
+  var waitingPollTimer = null;
 
-    socket.addEventListener("close", () => {
-        state.chat.connected = false;
-        if (state.snapshot?.status === "CHATTING") {
-            elements.chatStatus.textContent = "已断开";
+  function startWaitingPoll() {
+    stopWaitingPoll();
+    waitingPollTimer = setInterval(async function () {
+      if (waitingView.hidden) { stopWaitingPoll(); return; }
+      try {
+        var snapshot = await API.snapshot();
+        if (snapshot.status !== 'WAITING') {
+          // Game started or room ended
+          stopWaitingPoll();
+          if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING') {
+            enterGame(snapshot);
+          } else if (snapshot.status === 'ENDED' || snapshot.status === 'DESTROYED') {
+            toast('房间已结束', false);
+            disconnectWebSocket();
+            clearState();
+            showView(homeView);
+          }
+          return;
         }
+        renderWaiting(snapshot);
+      } catch (err) {
+        if (err.code === 'ROOM_NOT_FOUND') {
+          stopWaitingPoll();
+          disconnectWebSocket();
+          clearState();
+          toast('房间已解散', false);
+          showView(homeView);
+        }
+        // Other errors — ignore, will retry next poll
+      }
+    }, 3000);
+  }
+
+  function stopWaitingPoll() {
+    if (waitingPollTimer) {
+      clearInterval(waitingPollTimer);
+      waitingPollTimer = null;
+    }
+  }
+
+  // ==================== INIT ====================
+  function init() {
+    initHome();
+    initWaiting();
+    initGame();
+
+    // Attempt to restore session
+    restore();
+    if (state.roomCode && state.playerToken) {
+      // Reconnect to existing room
+      connectWebSocket(state.roomCode);
+      API.snapshot().then(function (snapshot) {
+        if (snapshot.status === 'WAITING') {
+          renderWaiting(snapshot);
+          showView(waitingView);
+          startWaitingPoll();
+        } else if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING') {
+          showView(gameView);
+          enterGame(snapshot);
+        } else {
+          // ENDED, DESTROYED — go home
+          disconnectWebSocket();
+          clearState();
+          showView(homeView);
+        }
+      }).catch(function () {
+        disconnectWebSocket();
+        clearState();
+        showView(homeView);
+      });
+    } else {
+      showView(homeView);
+    }
+
+    // Listen for waiting view becoming active
+    var waitingObserver = new MutationObserver(function () {
+      if (!waitingView.hidden) {
+        startWaitingPoll();
+      } else {
+        stopWaitingPoll();
+      }
     });
+    waitingObserver.observe(waitingView, { attributes: true, attributeFilter: ['hidden'] });
+  }
 
-    socket.addEventListener("error", () => {
-        showToast("聊天连接失败", true);
-    });
-}
-
-function disconnectChat() {
-    if (state.chat.socket) {
-        state.chat.socket.close();
-    }
-    state.chat.socket = null;
-    state.chat.roomCode = null;
-    state.chat.connected = false;
-    state.chat.buffer = "";
-    state.chat.subscriptionId = null;
-}
-
-function sendStompFrame(command, headers = {}, body = "") {
-    if (!state.chat.socket || state.chat.socket.readyState !== WebSocket.OPEN) {
-        return;
-    }
-
-    const headerLines = Object.entries(headers).map(([key, value]) => `${key}:${value}`);
-    const frame = [command, ...headerLines, "", body].join("\n") + "\0";
-    state.chat.socket.send(frame);
-}
-
-function handleStompFrame(rawFrame) {
-    const normalized = rawFrame.replace(/^\n+/, "");
-    const lines = normalized.split("\n");
-    const command = lines.shift();
-    const blankIndex = lines.indexOf("");
-    const body = blankIndex >= 0 ? lines.slice(blankIndex + 1).join("\n") : "";
-
-    if (command === "CONNECTED") {
-        state.chat.connected = true;
-        state.chat.subscriptionId = `room-events-${state.roomCode}`;
-        elements.chatStatus.textContent = "已连接";
-        sendStompFrame("SUBSCRIBE", {
-            id: state.chat.subscriptionId,
-            destination: `/topic/rooms/${state.roomCode}/events`,
-        });
-        return;
-    }
-
-    if (command === "MESSAGE") {
-        handleRoomEvent(body);
-        return;
-    }
-
-    if (command === "ERROR") {
-        showToast("聊天消息发送失败", true);
-    }
-}
-
-function handleRoomEvent(body) {
-    if (!body) {
-        return;
-    }
-
-    const event = JSON.parse(body);
-    if (event.type === "CHAT_MESSAGE") {
-        appendChatMessage(event.payload);
-    }
-}
-
-function appendChatMessage(message) {
-    const item = document.createElement("li");
-    item.className = message.senderPlayerId === state.playerId ? "chat-message mine" : "chat-message";
-    item.innerHTML = `
-        <div>
-            <strong>${playerLabelById(message.senderPlayerId)}</strong>
-            <time>${formatTime(message.createdAt)}</time>
-        </div>
-        <p>${escapeHtml(message.content)}</p>
-    `;
-    elements.chatList.appendChild(item);
-    elements.chatList.scrollTop = elements.chatList.scrollHeight;
-}
-
-function formatTime(value) {
-    if (!value) {
-        return "";
-    }
-    return new Date(value).toLocaleTimeString("zh-CN", {
-        hour: "2-digit",
-        minute: "2-digit",
-    });
-}
-
-function escapeHtml(value) {
-    const div = document.createElement("div");
-    div.textContent = value;
-    return div.innerHTML;
-}
-
-function showToast(message, error = false) {
-    const toast = document.createElement("div");
-    toast.className = `toast${error ? " error" : ""}`;
-    toast.textContent = message;
-    elements.messageArea.appendChild(toast);
-
-    window.setTimeout(() => {
-        toast.remove();
-    }, 3200);
-}
+  // Kick off
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
