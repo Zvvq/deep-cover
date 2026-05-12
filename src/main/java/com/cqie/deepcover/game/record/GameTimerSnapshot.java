@@ -17,6 +17,7 @@ import java.time.Instant;
  * @param durationSeconds 总时长，单位秒
  * @param startedAt 开始时间
  * @param endsAt 结束时间
+ * @param serverNow 生成快照时的服务端时间，用于前端校准本地倒计时
  * @param remainingSeconds 剩余秒数
  */
 public record GameTimerSnapshot(
@@ -26,6 +27,7 @@ public record GameTimerSnapshot(
         long durationSeconds,
         Instant startedAt,
         Instant endsAt,
+        Instant serverNow,
         long remainingSeconds
 ) {
     public static GameTimerSnapshot from(GameTimer timer, Instant now) {
@@ -37,6 +39,7 @@ public record GameTimerSnapshot(
                 timer.durationSeconds(),
                 timer.startedAt(),
                 timer.endsAt(),
+                now,
                 remainingSeconds
         );
     }
