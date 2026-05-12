@@ -30,4 +30,13 @@ public record Player(
     public static Player human(String id, String token) {
         return new Player(id, token, null, null, PlayerType.HUMAN, true, false);
     }
+
+    /**
+     * 创建 AI 卧底玩家。
+     *
+     * <p>当前先把 AI 作为普通房间玩家放入列表，后续接入 Python Agent 时可以通过 type=AI 找到它。</p>
+     */
+    public static Player ai(String id, String token) {
+        return new Player(id, token, null, null, PlayerType.AI, true, false);
+    }
 }
