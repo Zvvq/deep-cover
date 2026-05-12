@@ -1,5 +1,6 @@
 package com.cqie.deepcover.room.service;
 
+import com.cqie.deepcover.room.enums.PlayerType;
 import com.cqie.deepcover.room.enums.RoomErrorCode;
 import com.cqie.deepcover.room.enums.RoomStatus;
 import com.cqie.deepcover.room.exception.RoomException;
@@ -15,13 +16,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
- * room 模块的应用服务，集中处理房间生命周期和权限校验。
+ * room 模块的应用服务，集中处理房间生命周期和玩家身份校验。
  *
- * <p>Controller 不直接操作 Room，后续 game/chat 模块也应该优先通过这里获取
- * 房间状态，避免规则散落到多个入口。</p>
+ * <p>其他模块不要直接操作 RoomRepository，而是通过这里的校验方法进入房间状态。
+ * 这样投票、聊天、AI 决策都不会绕过同一套房间规则。</p>
  */
 @Service
 public class RoomService {
@@ -44,8 +46,7 @@ public class RoomService {
     }
 
     /**
-     * 创建房间时，自动生成一个 host 玩家，并返回房间快照和玩家凭证。
-     * @return 创建房间的响应
+     * 创建房间时自动生成房主玩家，并返回房间快照和房主 token。
      */
     public synchronized RoomCreateResult createRoom() {
         String roomCode = roomRepository.nextRoomCode();
@@ -56,13 +57,10 @@ public class RoomService {
     }
 
     /**
-     * 加入房间时，先检查房间状态和人数限制，再创建一个玩家并加入房间。开局后不允许加入，
-     * @param roomCode 房间码
-     * @return 加入房间的响应
+     * 等待阶段允许真人加入；游戏开始后不能再加入。
      */
     public synchronized RoomJoinResult joinRoom(String roomCode) {
         Room room = findRoom(roomCode);
-        // 只有等待中的房间能加入；开局后加入会破坏匿名分配和游戏平衡。
         if (room.status() != RoomStatus.WAITING) {
             throw new RoomException(RoomErrorCode.ROOM_NOT_JOINABLE, "Room is not joinable.");
         }
@@ -76,25 +74,16 @@ public class RoomService {
         return new RoomJoinResult(roomCode, player.id(), player.token(), snapshot(room));
     }
 
-    /**
-     * 获取房间状态
-     * @param roomCode 房间码
-     * @return 房间快照
-     */
     public RoomSnapshot snapshot(String roomCode) {
         return snapshot(findRoom(roomCode));
     }
 
     /**
-     * 开局
-     * @param roomCode 房间码
-     * @param playerToken 玩家凭证
-     * @return 房间快照
+     * 房主开始游戏：补齐默认 AI 玩家，进入聊天阶段，并发布房间开始事件。
      */
     public synchronized RoomSnapshot startRoom(String roomCode, String playerToken) {
         Room room = findRoom(roomCode);
         Player requester = findPlayer(room, playerToken);
-        // start 是房主动作，先用 token 找到玩家，再判断 host 标记。
         if (!requester.host()) {
             throw new RoomException(RoomErrorCode.FORBIDDEN, "Only the host can start the room.");
         }
@@ -109,16 +98,12 @@ public class RoomService {
     }
 
     /**
-     * 离开房间，房主离开时房间会销毁，其他玩家离开更新状态
-     * @param roomCode 房间码
-     * @param playerToken 玩家凭证
-     * @return 房间快照
+     * 房主离开直接销毁房间，非房主离开则只移除自己。
      */
     public synchronized RoomSnapshot leaveRoom(String roomCode, String playerToken) {
         Room room = findRoom(roomCode);
         Player player = findPlayer(room, playerToken);
         if (player.host()) {
-            // 用户明确要求：房主离开时房间直接销毁，而不是转让房主。
             room.markDestroyed();
             RoomSnapshot destroyedSnapshot = snapshot(room);
             roomRepository.deleteByCode(roomCode);
@@ -131,21 +116,97 @@ public class RoomService {
     }
 
     /**
-     * 聊天模块使用的玩家身份校验入口。
-     *
-     * <p>chat 模块只关心“这个 token 是不是当前房间里的玩家，以及房间是否已经进入聊天阶段”。
-     * 具体怎么找房间、怎么校验 token，仍然放在 room 模块内部，避免其他模块绕过房间规则。</p>
-     *
-     * @param roomCode 房间码
-     * @param playerToken 玩家凭证
-     * @return 已通过校验的玩家
+     * 聊天模块使用的真人玩家校验入口。
      */
     public synchronized Player requireChatParticipant(String roomCode, String playerToken) {
         Room room = findRoom(roomCode);
         if (room.status() != RoomStatus.CHATTING) {
             throw new RoomException(RoomErrorCode.ROOM_NOT_CHATTING, "Room is not chatting.");
         }
-        return findPlayer(room, playerToken);
+        Player player = findPlayer(room, playerToken);
+        requireAlive(player);
+        return player;
+    }
+
+    /**
+     * AI 发言使用的校验入口。AI 没有浏览器 token，所以系统内部用 playerId 校验。
+     */
+    public synchronized Player requireAliveAiChatParticipant(String roomCode, String playerId) {
+        Room room = findRoom(roomCode);
+        if (room.status() != RoomStatus.CHATTING) {
+            throw new RoomException(RoomErrorCode.ROOM_NOT_CHATTING, "Room is not chatting.");
+        }
+        Player player = findPlayerById(room, playerId);
+        requireAi(player);
+        requireAlive(player);
+        return player;
+    }
+
+    /**
+     * 真人投票使用的校验入口。
+     */
+    public synchronized Player requireVotingParticipant(String roomCode, String playerToken) {
+        Room room = findRoom(roomCode);
+        if (room.status() != RoomStatus.VOTING) {
+            throw new RoomException(RoomErrorCode.ROOM_NOT_VOTING, "Room is not voting.");
+        }
+        Player player = findPlayer(room, playerToken);
+        requireAlive(player);
+        return player;
+    }
+
+    /**
+     * AI 投票使用的校验入口。
+     */
+    public synchronized Player requireAliveAiVotingParticipant(String roomCode, String playerId) {
+        Room room = findRoom(roomCode);
+        if (room.status() != RoomStatus.VOTING) {
+            throw new RoomException(RoomErrorCode.ROOM_NOT_VOTING, "Room is not voting.");
+        }
+        Player player = findPlayerById(room, playerId);
+        requireAi(player);
+        requireAlive(player);
+        return player;
+    }
+
+    public synchronized RoomSnapshot markVoting(String roomCode) {
+        Room room = findRoom(roomCode);
+        room.markVoting();
+        roomRepository.save(room);
+        return snapshot(room);
+    }
+
+    public synchronized RoomSnapshot markChatting(String roomCode) {
+        Room room = findRoom(roomCode);
+        room.markChatting();
+        roomRepository.save(room);
+        return snapshot(room);
+    }
+
+    public synchronized RoomSnapshot markEnded(String roomCode) {
+        Room room = findRoom(roomCode);
+        room.markEnded();
+        roomRepository.save(room);
+        return snapshot(room);
+    }
+
+    public synchronized RoomSnapshot eliminatePlayer(String roomCode, String playerId) {
+        Room room = findRoom(roomCode);
+        Player player = findPlayerById(room, playerId);
+        requireAlive(player);
+        room.eliminatePlayer(playerId);
+        roomRepository.save(room);
+        return snapshot(room);
+    }
+
+    /**
+     * AI 定时发言模块用这个方法找到所有正在聊天的房间。
+     */
+    public synchronized List<RoomSnapshot> snapshotsByStatus(RoomStatus status) {
+        return roomRepository.findAll().stream()
+                .filter(room -> room.status() == status)
+                .map(this::snapshot)
+                .toList();
     }
 
     private Room findRoom(String roomCode) {
@@ -153,21 +214,30 @@ public class RoomService {
                 .orElseThrow(() -> new RoomException(RoomErrorCode.ROOM_NOT_FOUND, "Room not found."));
     }
 
-    /**
-     * 根据房间和玩家凭证查找玩家
-     * @param room 房间
-     * @param playerToken 玩家凭证
-     * @return 玩家
-     */
     private Player findPlayer(Room room, String playerToken) {
         return room.findPlayerByToken(playerToken)
                 .orElseThrow(() -> new RoomException(RoomErrorCode.PLAYER_NOT_FOUND, "Player not found."));
     }
 
+    private Player findPlayerById(Room room, String playerId) {
+        return room.findPlayerById(playerId)
+                .orElseThrow(() -> new RoomException(RoomErrorCode.PLAYER_NOT_FOUND, "Player not found."));
+    }
+
+    private void requireAlive(Player player) {
+        if (!player.alive()) {
+            throw new RoomException(RoomErrorCode.PLAYER_NOT_ALIVE, "Player is not alive.");
+        }
+    }
+
+    private void requireAi(Player player) {
+        if (player.type() != PlayerType.AI) {
+            throw new RoomException(RoomErrorCode.PLAYER_NOT_FOUND, "AI player not found.");
+        }
+    }
+
     /**
-     * 开局时补齐默认 AI 卧底。
-     *
-     * <p>当前 MVP 固定 1 个 AI。后续如果要支持多个 AI 或根据房间配置调整数量，可以把这个常量改成配置项。</p>
+     * 开局时补齐默认 AI 卧底。后续如果支持配置，可以把常量改成房间配置。
      */
     private void addMissingAiUndercoverPlayers(Room room) {
         long missingAiCount = DEFAULT_AI_UNDERCOVER_COUNT - room.aiPlayerCount();
@@ -176,11 +246,6 @@ public class RoomService {
         }
     }
 
-    /**
-     * 将 Room 转换为 RoomSnapshot，后者是一个只读视图，用于返回给客户端。RoomSnapshot 中不包含玩家 token，
-     * @param room 房间
-     * @return 房间快照
-     */
     private RoomSnapshot snapshot(Room room) {
         return new RoomSnapshot(
                 room.roomCode(),
@@ -192,27 +257,14 @@ public class RoomService {
         );
     }
 
-    /**
-     * 生成一个随机的玩家 ID
-     * @return 玩家 ID
-     */
     private String nextId() {
         return "player-" + UUID.randomUUID();
     }
 
-    /**
-     * 生成 AI 玩家 ID。
-     *
-     * @return AI 玩家 ID
-     */
     private String nextAiId() {
         return "ai-" + UUID.randomUUID();
     }
 
-    /**
-     * 生成一个随机的玩家凭证
-     * @return 玩家凭证
-     */
     private String nextToken() {
         return UUID.randomUUID().toString();
     }
