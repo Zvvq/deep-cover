@@ -15,7 +15,13 @@
     subscription: null,
     timerInterval: null,
     timerEndsAt: null,
+    timerPhase: null,
     timerServerOffsetMs: 0,
+    currentRoomStatus: null,
+    currentPlayers: [],
+    voteSnapshot: null,
+    voteCandidateIds: [],
+    voteSubmitting: false,
   };
 
   function persist() {
@@ -37,6 +43,11 @@
     state.roomCode = null;
     state.playerId = null;
     state.playerToken = null;
+    state.currentRoomStatus = null;
+    state.currentPlayers = [];
+    state.voteSnapshot = null;
+    state.voteCandidateIds = [];
+    state.voteSubmitting = false;
     persist();
   }
 
@@ -59,6 +70,7 @@
 
   // Waiting
   const btnLeaveWaiting = $('#btn-leave-waiting');
+  const btnCopyWaitingRoom = $('#btn-copy-waiting-room');
   const waitingRoomCode = $('#waiting-room-code');
   const waitingRoomStatus = $('#waiting-room-status');
   const waitingPlayerCount = $('#waiting-player-count');
@@ -68,9 +80,15 @@
 
   // Game
   const gameRoomCode = $('#game-room-code');
+  const btnCopyGameRoom = $('#btn-copy-game-room');
   const timerValue = $('#timer-value');
   const timerDisplay = $('#timer-display');
   const gamePhaseBadge = $('#game-phase-badge');
+  const votePanel = $('#vote-panel');
+  const voteProgress = $('#vote-progress');
+  const voteStatus = $('#vote-status');
+  const voteCandidates = $('#vote-candidates');
+  const voteHint = $('#vote-hint');
   const chatMessages = $('#chat-messages');
   const chatForm = $('#chat-form');
   const chatInput = $('#chat-input');
@@ -103,6 +121,35 @@
     return state.playerId === playerId;
   }
 
+  function currentPlayer() {
+    return state.currentPlayers.find(function (player) {
+      return player.id === state.playerId;
+    }) || null;
+  }
+
+  function isCurrentPlayerAlive() {
+    var player = currentPlayer();
+    return !player || player.alive !== false;
+  }
+
+  function playerNameById(playerId) {
+    var player = state.currentPlayers.find(function (p) { return p.id === playerId; });
+    if (player) return playerLabel(player);
+    return '玩家 ' + (playerId || '').substring(0, 4);
+  }
+
+  function winnerLabel(winner) {
+    if (winner === 'HUMAN') return '真人阵营';
+    if (winner === 'AI') return 'AI 阵营';
+    return winner || '未知阵营';
+  }
+
+  function setChatInputState(enabled, placeholder) {
+    chatInput.disabled = !enabled;
+    chatInput.placeholder = placeholder;
+    btnSend.disabled = !enabled || chatInput.value.trim().length === 0;
+  }
+
   // ==================== TOAST ====================
   let toastTimer = null;
   function toast(msg, isError) {
@@ -119,6 +166,45 @@
       el.remove();
       toastTimer = null;
     }, 3500);
+  }
+
+  async function copyText(text) {
+    if (!text) return false;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) {
+        // Fall back to the textarea path below.
+      }
+    }
+
+    var textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    var ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } finally {
+      textarea.remove();
+    }
+    return ok;
+  }
+
+  async function handleCopyRoomCode() {
+    var code = state.roomCode || waitingRoomCode.textContent || gameRoomCode.textContent;
+    try {
+      var copied = await copyText(code);
+      toast(copied ? '房间号已复制' : '复制失败，请手动复制', !copied);
+    } catch (_) {
+      toast('复制失败，请手动复制', true);
+    }
   }
 
   // ==================== API ====================
@@ -176,6 +262,16 @@
 
     timer() {
       return API.request('GET', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/timer');
+    },
+
+    votesSnapshot() {
+      return API.request('GET', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/votes');
+    },
+
+    castVote(targetPlayerId) {
+      return API.request('POST', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/votes', {
+        targetPlayerId: targetPlayerId,
+      });
     },
   };
 
@@ -253,6 +349,7 @@
   // ==================== WAITING ROOM ====================
   function initWaiting() {
     btnLeaveWaiting.addEventListener('click', handleLeaveWaiting);
+    btnCopyWaitingRoom.addEventListener('click', handleCopyRoomCode);
     btnStartGame.addEventListener('click', handleStartGame);
   }
 
@@ -327,29 +424,116 @@
 
   // ==================== GAME VIEW ====================
   function initGame() {
+    btnCopyGameRoom.addEventListener('click', handleCopyRoomCode);
     chatForm.addEventListener('submit', handleSendChat);
     chatInput.addEventListener('input', function () {
-      btnSend.disabled = chatInput.value.trim().length === 0;
+      btnSend.disabled = chatInput.disabled || chatInput.value.trim().length === 0;
+    });
+    voteCandidates.addEventListener('click', function (event) {
+      var button = event.target.closest('[data-target-player-id]');
+      if (!button || button.disabled) return;
+      handleVoteSubmit(button.dataset.targetPlayerId);
     });
   }
 
   function enterGame(snapshot) {
     showView(gameView);
-    gameRoomCode.textContent = snapshot.roomCode;
-    renderGamePlayers(snapshot.players || []);
-
-    // Load chat history
-    loadChatHistory();
-
-    // Load timer
-    loadTimer();
+    applyGameSnapshot(snapshot);
 
     // Clear chat input
     chatInput.value = '';
-    btnSend.disabled = true;
+    btnSend.disabled = chatInput.disabled || chatInput.value.trim().length === 0;
+  }
+
+  function applyGameSnapshot(snapshot) {
+    if (!snapshot) return;
+
+    var previousStatus = state.currentRoomStatus;
+    state.currentRoomStatus = snapshot.status;
+    state.roomCode = snapshot.roomCode || state.roomCode;
+    gameRoomCode.textContent = snapshot.roomCode;
+    renderGamePlayers(snapshot.players || []);
+
+    if (snapshot.status === 'VOTING') {
+      if (previousStatus !== 'CHATTING') {
+        chatMessages.innerHTML = '<p class="chat-placeholder">投票阶段，聊天已暂停</p>';
+      }
+      enterVoting();
+    } else if (snapshot.status === 'CHATTING') {
+      enterChatting();
+      if (previousStatus !== 'CHATTING') loadChatHistory();
+    } else if (snapshot.status === 'ENDED') {
+      enterEnded();
+    }
+  }
+
+  async function refreshRoomState() {
+    try {
+      var snapshot = await API.snapshot();
+      if (snapshot.status === 'WAITING') {
+        renderWaiting(snapshot);
+        showView(waitingView);
+      } else if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING' || snapshot.status === 'ENDED') {
+        showView(gameView);
+        applyGameSnapshot(snapshot);
+      } else if (snapshot.status === 'DESTROYED') {
+        toast('房间已解散', false);
+        disconnectWebSocket();
+        clearState();
+        showView(homeView);
+      }
+    } catch (err) {
+      if (err.code === 'ROOM_NOT_FOUND') {
+        disconnectWebSocket();
+        clearState();
+        toast('房间已解散', false);
+        showView(homeView);
+      }
+    }
+  }
+
+  function scheduleRoomRefresh(delayMs) {
+    setTimeout(refreshRoomState, delayMs);
+  }
+
+  function enterChatting() {
+    hideVotePanel();
+    state.voteSnapshot = null;
+    state.voteCandidateIds = [];
+    gamePhaseBadge.textContent = '讨论阶段';
+    gamePhaseBadge.className = 'phase-badge';
+    setChatInputState(isCurrentPlayerAlive(), isCurrentPlayerAlive() ? '输入消息…' : '你已出局，无法发言');
+    loadTimer();
+  }
+
+  function enterVoting() {
+    gamePhaseBadge.textContent = '投票阶段';
+    gamePhaseBadge.className = 'phase-badge';
+    setChatInputState(false, '投票阶段暂停发言');
+    votePanel.hidden = false;
+    renderVotePanel();
+    loadVoteSnapshot();
+    loadTimer();
+  }
+
+  function enterEnded() {
+    hideVotePanel();
+    stopTimerInterval();
+    timerValue.textContent = '--:--';
+    timerDisplay.classList.remove('warning', 'danger');
+    gamePhaseBadge.textContent = '游戏结束';
+    gamePhaseBadge.className = 'phase-badge expired';
+    setChatInputState(false, '游戏已结束');
+  }
+
+  function hideVotePanel() {
+    votePanel.hidden = true;
+    voteCandidates.innerHTML = '';
+    voteHint.textContent = '';
   }
 
   function renderGamePlayers(players) {
+    state.currentPlayers = players;
     gamePlayerCount.textContent = '(' + players.length + ')';
     gamePlayerList.innerHTML = '';
     players.forEach(function (p) {
@@ -373,6 +557,114 @@
       li.appendChild(status);
 
       gamePlayerList.appendChild(li);
+    });
+  }
+
+  async function loadVoteSnapshot() {
+    if (state.currentRoomStatus !== 'VOTING') return;
+    try {
+      state.voteSnapshot = await API.votesSnapshot();
+      renderVotePanel();
+    } catch (err) {
+      voteProgress.textContent = '投票状态暂不可用';
+      voteHint.textContent = err.message || '请稍后重试';
+    }
+  }
+
+  function renderVotePanel() {
+    if (state.currentRoomStatus !== 'VOTING') {
+      hideVotePanel();
+      return;
+    }
+
+    votePanel.hidden = false;
+    var snapshot = state.voteSnapshot;
+    var hasVoted = !!(snapshot && snapshot.currentPlayerVoted);
+    var alive = isCurrentPlayerAlive();
+
+    voteStatus.textContent = hasVoted ? '已提交' : (state.voteSubmitting ? '提交中' : '待投票');
+    voteStatus.className = 'vote-status-pill' + (hasVoted ? ' done' : '');
+    voteProgress.textContent = snapshot
+      ? ('已提交 ' + snapshot.submittedVoteCount + '/' + snapshot.requiredVoteCount + ' 票')
+      : '正在加载投票状态';
+
+    var candidates = voteCandidatesForCurrentPlayer();
+    voteCandidates.innerHTML = '';
+    candidates.forEach(function (player) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'vote-candidate';
+      button.dataset.targetPlayerId = player.id;
+      button.disabled = !alive || hasVoted || state.voteSubmitting;
+
+      var name = document.createElement('span');
+      name.className = 'vote-candidate-name';
+      name.textContent = playerLabel(player);
+
+      var meta = document.createElement('span');
+      meta.className = 'vote-candidate-meta';
+      meta.textContent = player.id.substring(0, 8);
+
+      button.appendChild(name);
+      button.appendChild(meta);
+      voteCandidates.appendChild(button);
+    });
+
+    if (!alive) {
+      voteHint.textContent = '你已出局，不能参与本轮投票';
+    } else if (hasVoted) {
+      voteHint.textContent = '投票已提交，等待其他玩家完成投票';
+    } else if (candidates.length === 0) {
+      voteHint.textContent = '暂无可投票对象';
+    } else {
+      voteHint.textContent = '选择你认为最可疑的玩家';
+    }
+  }
+
+  function voteCandidatesForCurrentPlayer() {
+    var candidateIds = state.voteCandidateIds.length
+      ? state.voteCandidateIds
+      : state.currentPlayers.filter(function (player) { return player.alive; }).map(function (player) { return player.id; });
+
+    return candidateIds
+      .map(function (playerId) {
+        return state.currentPlayers.find(function (player) { return player.id === playerId; });
+      })
+      .filter(function (player) {
+        return player && player.alive && player.id !== state.playerId;
+      });
+  }
+
+  async function handleVoteSubmit(targetPlayerId) {
+    if (!targetPlayerId || state.voteSubmitting) return;
+
+    state.voteSubmitting = true;
+    var settled = false;
+    renderVotePanel();
+    try {
+      var result = await API.castVote(targetPlayerId);
+      toast('投票已提交', false);
+      await loadVoteSnapshot();
+      if (result && result.settled) {
+        settled = true;
+        setVotingLocked('投票已结束，等待结算');
+        scheduleRoomRefresh(700);
+      }
+    } catch (err) {
+      toast(err.message, true);
+      await loadVoteSnapshot();
+    } finally {
+      state.voteSubmitting = false;
+      if (!settled) renderVotePanel();
+    }
+  }
+
+  function setVotingLocked(message) {
+    voteStatus.textContent = '结算中';
+    voteStatus.className = 'vote-status-pill done';
+    voteHint.textContent = message;
+    voteCandidates.querySelectorAll('button').forEach(function (button) {
+      button.disabled = true;
     });
   }
 
@@ -435,6 +727,7 @@
 
   async function handleSendChat(e) {
     e.preventDefault();
+    if (chatInput.disabled || state.currentRoomStatus !== 'CHATTING') return;
     var content = chatInput.value.trim();
     if (!content) return;
 
@@ -459,8 +752,14 @@
       updateTimerDisplay(data);
     } catch (err) {
       // Timer may not exist yet
+      stopTimerInterval();
+      state.timerEndsAt = null;
+      state.timerPhase = null;
       timerValue.textContent = '--:--';
-      gamePhaseBadge.textContent = '';
+      timerDisplay.classList.remove('warning', 'danger');
+      gamePhaseBadge.textContent = state.currentRoomStatus === 'VOTING'
+        ? '投票阶段'
+        : (state.currentRoomStatus === 'CHATTING' ? '讨论阶段' : '');
       gamePhaseBadge.className = 'phase-badge';
     }
   }
@@ -468,13 +767,12 @@
   function updateTimerDisplay(data) {
     if (!data) return;
 
+    state.timerPhase = data.phase;
     gamePhaseBadge.textContent = data.phase === 'CHATTING' ? '讨论阶段' : (data.phase === 'VOTING' ? '投票阶段' : data.phase);
     gamePhaseBadge.className = 'phase-badge' + (data.status === 'EXPIRED' ? ' expired' : '');
 
     if (data.status === 'EXPIRED') {
-      timerValue.textContent = '00:00';
-      timerDisplay.classList.add('danger');
-      timerDisplay.classList.remove('warning');
+      setTimerExpiredUi(data.phase);
       stopTimerInterval();
       return;
     }
@@ -504,12 +802,22 @@
 
       if (remaining <= 0) {
         stopTimerInterval();
-        gamePhaseBadge.textContent = '已结束';
-        gamePhaseBadge.className = 'phase-badge expired';
+        setTimerExpiredUi(state.timerPhase);
+        scheduleRoomRefresh(700);
       }
     };
     tick();
     state.timerInterval = setInterval(tick, 250);
+  }
+
+  function setTimerExpiredUi(phase) {
+    timerValue.textContent = '00:00';
+    timerDisplay.classList.add('danger');
+    timerDisplay.classList.remove('warning');
+    gamePhaseBadge.textContent = phase === 'CHATTING'
+      ? '等待投票'
+      : (phase === 'VOTING' ? '等待结算' : '已结束');
+    gamePhaseBadge.className = 'phase-badge expired';
   }
 
   function stopTimerInterval() {
@@ -561,6 +869,8 @@
       state.stompClient = null;
     }
     stopTimerInterval();
+    state.timerEndsAt = null;
+    state.timerPhase = null;
   }
 
   function handleWebSocketEvent(message) {
@@ -577,6 +887,21 @@
       case 'TIMER_EXPIRED':
         handleTimerExpired(event.payload);
         break;
+      case 'VOTING_STARTED':
+        handleVotingStarted(event.payload);
+        break;
+      case 'VOTE_UPDATED':
+        handleVoteUpdated(event.payload);
+        break;
+      case 'PLAYER_ELIMINATED':
+        handlePlayerEliminated(event.payload);
+        break;
+      case 'ROUND_STARTED':
+        handleRoundStarted(event.payload);
+        break;
+      case 'GAME_ENDED':
+        handleGameEnded(event.payload);
+        break;
       default:
         // Unknown event — ignore
     }
@@ -589,12 +914,77 @@
   }
 
   function handleTimerExpired(payload) {
+    if (!payload) return;
     addEventMessage('计时器已到期 — ' + (payload.phase === 'CHATTING' ? '讨论时间结束' : '投票时间结束'));
     stopTimerInterval();
-    timerValue.textContent = '00:00';
-    timerDisplay.classList.add('danger');
-    gamePhaseBadge.textContent = '已结束';
+    setTimerExpiredUi(payload.phase);
+
+    if (payload.phase === 'CHATTING') {
+      setChatInputState(false, '正在进入投票阶段');
+      scheduleRoomRefresh(500);
+      scheduleRoomRefresh(1400);
+    } else if (payload.phase === 'VOTING') {
+      setVotingLocked('投票时间结束，等待结算');
+      scheduleRoomRefresh(900);
+    }
+  }
+
+  function handleVotingStarted(payload) {
+    if (!payload) return;
+    state.currentRoomStatus = 'VOTING';
+    state.voteSnapshot = null;
+    state.voteCandidateIds = payload.candidatePlayerIds || [];
+    addEventMessage('进入第 ' + payload.roundNumber + ' 轮投票');
+    enterVoting();
+    refreshRoomState();
+  }
+
+  function handleVoteUpdated(payload) {
+    if (!payload) return;
+    if (!state.voteSnapshot || state.voteSnapshot.roundNumber !== payload.roundNumber) {
+      loadVoteSnapshot();
+      return;
+    }
+    state.voteSnapshot = {
+      roomCode: payload.roomCode,
+      roundNumber: payload.roundNumber,
+      requiredVoteCount: payload.requiredVoteCount,
+      submittedVoteCount: payload.submittedVoteCount,
+      currentPlayerVoted: state.voteSnapshot.currentPlayerVoted,
+    };
+    renderVotePanel();
+  }
+
+  function handlePlayerEliminated(payload) {
+    if (!payload) return;
+    var eliminatedName = playerNameById(payload.playerId);
+    addEventMessage('投票结算 — ' + eliminatedName + ' 已出局');
+    state.currentPlayers = state.currentPlayers.map(function (player) {
+      if (player.id !== payload.playerId) return player;
+      return Object.assign({}, player, { alive: false });
+    });
+    renderGamePlayers(state.currentPlayers);
+    hideVotePanel();
+    setChatInputState(false, '等待下一轮');
+    gamePhaseBadge.textContent = '结算中';
     gamePhaseBadge.className = 'phase-badge expired';
+  }
+
+  function handleRoundStarted(payload) {
+    if (!payload) return;
+    addEventMessage('第 ' + payload.roundNumber + ' 轮讨论开始');
+    state.voteSnapshot = null;
+    state.voteCandidateIds = [];
+    state.currentRoomStatus = 'CHATTING';
+    refreshRoomState();
+  }
+
+  function handleGameEnded(payload) {
+    if (!payload) return;
+    addEventMessage('游戏结束 — ' + winnerLabel(payload.winner) + '胜利');
+    state.currentRoomStatus = 'ENDED';
+    enterEnded();
+    scheduleRoomRefresh(500);
   }
 
   // ==================== POLLING (Waiting Room) ====================

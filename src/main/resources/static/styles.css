@@ -283,6 +283,12 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
   gap: var(--spacing-md);
 }
 
+.room-code-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
 .room-code-badge {
   display: flex;
   flex-direction: column;
@@ -307,6 +313,18 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
   font-weight: 500;
   letter-spacing: 0.08em;
   color: var(--color-accent);
+}
+
+.copy-room-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--color-text-secondary);
+}
+
+.copy-room-btn:hover:not(:disabled) {
+  color: var(--color-accent);
+  border-color: rgba(217, 119, 6, 0.35);
 }
 
 .room-status-pill {
@@ -412,6 +430,10 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
 }
 
 .game-room-info .room-code-value { font-size: 1rem; }
+.game-room-info .copy-room-btn {
+  width: 30px;
+  height: 30px;
+}
 
 .timer-display {
   display: flex;
@@ -452,6 +474,106 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
   flex-direction: column;
   overflow: hidden;
   border-right: 1px solid var(--color-border);
+}
+
+.vote-panel {
+  padding: var(--spacing-md);
+  background: linear-gradient(180deg, rgba(22, 37, 54, 0.96), rgba(15, 31, 43, 0.96));
+  border-bottom: 1px solid var(--color-border-visible);
+}
+
+.vote-panel[hidden] { display: none; }
+
+.vote-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+.vote-title {
+  font-size: 0.95rem;
+  color: var(--color-foreground);
+}
+
+.vote-progress {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+.vote-status-pill {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(217, 119, 6, 0.14);
+  color: var(--color-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.vote-status-pill.done {
+  background: rgba(21, 128, 61, 0.15);
+  color: var(--color-success);
+}
+
+.vote-candidates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.vote-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  min-height: 44px;
+  padding: 9px 12px;
+  color: var(--color-foreground);
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid var(--color-border-visible);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+  text-align: left;
+}
+
+.vote-candidate:hover:not(:disabled) {
+  background: rgba(21, 128, 61, 0.13);
+  border-color: rgba(21, 128, 61, 0.35);
+}
+
+.vote-candidate:active:not(:disabled) { transform: scale(0.98); }
+
+.vote-candidate:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.vote-candidate-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vote-candidate-meta {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.vote-hint {
+  min-height: 1.2em;
+  margin-top: var(--spacing-sm);
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
 }
 
 .chat-messages {
@@ -561,6 +683,10 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
   .room-header {
     flex-wrap: wrap;
   }
+
+  .vote-candidates {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 480px) {
@@ -570,6 +696,7 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
   .game-topbar {
     padding: 8px var(--spacing-md);
     gap: var(--spacing-sm);
+    flex-wrap: wrap;
   }
 
   .chat-input-bar {
