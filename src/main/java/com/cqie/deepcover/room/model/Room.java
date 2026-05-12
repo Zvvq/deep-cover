@@ -12,8 +12,8 @@ import java.util.Optional;
 /**
  * 房间聚合对象，保存 room 模块自己的核心状态。
  *
- * <p>这里先只处理等待、开始、离开这些房间生命周期规则。聊天记录、投票、
- * AI 玩家注入等会放到后续 game/chat 模块里，避免 Room 变成大杂烩。</p>
+ * <p>Room 只负责玩家列表和房间生命周期。聊天、投票、AI 决策都通过服务层组合，
+ * 避免把所有玩法逻辑塞进这个对象。</p>
  */
 public class Room {
     private final String roomCode;
@@ -46,7 +46,6 @@ public class Room {
     }
 
     public List<Player> players() {
-        // 只允许 Room 自己修改玩家列表，外部只能拿只读视图。
         return Collections.unmodifiableList(players);
     }
 
@@ -62,15 +61,41 @@ public class Room {
         status = RoomStatus.CHATTING;
     }
 
+    public void markVoting() {
+        status = RoomStatus.VOTING;
+    }
+
+    public void markEnded() {
+        status = RoomStatus.ENDED;
+    }
+
     public void markDestroyed() {
         status = RoomStatus.DESTROYED;
     }
 
     public Optional<Player> findPlayerByToken(String token) {
-        // token 是服务端识别浏览器身份的凭证，不会通过快照暴露给其他玩家。
         return players.stream()
                 .filter(player -> player.token().equals(token))
                 .findFirst();
+    }
+
+    public Optional<Player> findPlayerById(String playerId) {
+        return players.stream()
+                .filter(player -> player.id().equals(playerId))
+                .findFirst();
+    }
+
+    /**
+     * Player 是不可变 record，所以这里用新对象替换原玩家。
+     */
+    public void eliminatePlayer(String playerId) {
+        for (int i = 0; i < players.size(); i++) {
+            Player player = players.get(i);
+            if (player.id().equals(playerId)) {
+                players.set(i, player.eliminate());
+                return;
+            }
+        }
     }
 
     public long humanPlayerCount() {
@@ -82,6 +107,18 @@ public class Room {
     public long aiPlayerCount() {
         return players.stream()
                 .filter(player -> player.type() == PlayerType.AI)
+                .count();
+    }
+
+    public long aliveHumanPlayerCount() {
+        return players.stream()
+                .filter(player -> player.alive() && player.type() == PlayerType.HUMAN)
+                .count();
+    }
+
+    public long aliveAiPlayerCount() {
+        return players.stream()
+                .filter(player -> player.alive() && player.type() == PlayerType.AI)
                 .count();
     }
 }
