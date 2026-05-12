@@ -39,4 +39,11 @@ public record Player(
     public static Player ai(String id, String token) {
         return new Player(id, token, null, null, PlayerType.AI, true, false);
     }
+
+    /**
+     * record 本身不可变，淘汰玩家时返回一个新的玩家对象交给 Room 替换。
+     */
+    public Player eliminate() {
+        return new Player(id, token, number, color, type, false, host);
+    }
 }
