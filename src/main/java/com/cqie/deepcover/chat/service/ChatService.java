@@ -20,8 +20,8 @@ import java.util.UUID;
 /**
  * chat 模块的业务服务。
  *
- * <p>它负责“能不能发、发什么、保存到哪里、广播什么”。房间状态和玩家 token 的校验委托给
- * {@link RoomService}，这样 room 模块仍然是房间规则的唯一入口。</p>
+ * <p>真人消息和 AI 消息最终都走同一套保存和广播逻辑，前端只需要处理统一的
+ * CHAT_MESSAGE 事件。</p>
  */
 @Service
 public class ChatService {
@@ -42,20 +42,43 @@ public class ChatService {
     }
 
     /**
-     * 发送一条聊天消息。
-     *
-     * @param roomCode 房间码
-     * @param request 前端传入的聊天请求
-     * @return 已保存并广播的消息响应
+     * 真人玩家发送聊天消息。
      */
     public ChatMessageResponse sendMessage(String roomCode, ChatMessageRequest request) {
-        String content = normalizeContent(request);
+        if (request == null) {
+            throw new RoomException(RoomErrorCode.INVALID_CHAT_MESSAGE, "Chat message cannot be empty.");
+        }
+        String content = normalizeContent(request.content());
         Player sender = roomService.requireChatParticipant(roomCode, request.playerToken());
 
+        return saveAndPublish(roomCode, sender.id(), content);
+    }
+
+    /**
+     * AI 决策模块使用的内部发言入口。
+     */
+    public ChatMessageResponse sendAiMessage(String roomCode, String aiPlayerId, String content) {
+        String normalizedContent = normalizeContent(content);
+        Player sender = roomService.requireAliveAiChatParticipant(roomCode, aiPlayerId);
+
+        return saveAndPublish(roomCode, sender.id(), normalizedContent);
+    }
+
+    /**
+     * 查询当前房间的全部历史聊天消息。
+     */
+    public List<ChatMessageResponse> findMessages(String roomCode, String playerToken) {
+        roomService.requireChatParticipant(roomCode, playerToken);
+        return chatMessageRepository.findByRoomCode(roomCode).stream()
+                .map(ChatMessageResponse::from)
+                .toList();
+    }
+
+    private ChatMessageResponse saveAndPublish(String roomCode, String senderPlayerId, String content) {
         ChatMessage message = new ChatMessage(
                 nextMessageId(),
                 roomCode,
-                sender.id(),
+                senderPlayerId,
                 content,
                 Instant.now()
         );
@@ -66,34 +89,12 @@ public class ChatService {
         return response;
     }
 
-    /**
-     * 查询当前房间的全部历史聊天消息。
-     *
-     * <p>查询前也会校验玩家 token，避免没有加入房间的人只靠房间号就拉到聊天记录。</p>
-     *
-     * @param roomCode 房间码
-     * @param playerToken 当前玩家凭证
-     * @return 当前房间的全部聊天消息
-     */
-    public List<ChatMessageResponse> findMessages(String roomCode, String playerToken) {
-        roomService.requireChatParticipant(roomCode, playerToken);
-        return chatMessageRepository.findByRoomCode(roomCode).stream()
-                .map(ChatMessageResponse::from)
-                .toList();
-    }
-
-    /**
-     * 统一处理聊天内容的空值、空白和长度限制。
-     *
-     * @param request 聊天请求
-     * @return 清理后的聊天内容
-     */
-    private String normalizeContent(ChatMessageRequest request) {
-        if (request == null || request.content() == null) {
+    private String normalizeContent(String rawContent) {
+        if (rawContent == null) {
             throw new RoomException(RoomErrorCode.INVALID_CHAT_MESSAGE, "Chat message cannot be empty.");
         }
 
-        String content = request.content().trim();
+        String content = rawContent.trim();
         if (content.isEmpty()) {
             throw new RoomException(RoomErrorCode.INVALID_CHAT_MESSAGE, "Chat message cannot be empty.");
         }
