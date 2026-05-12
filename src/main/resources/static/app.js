@@ -15,6 +15,7 @@
     subscription: null,
     timerInterval: null,
     timerEndsAt: null,
+    timerServerOffsetMs: 0,
   };
 
   function persist() {
@@ -92,7 +93,8 @@
   }
 
   function playerLabel(player) {
-    let label = '玩家 ' + (player.id || '').substring(0, 4);
+    var typeName = player.type === 'AI' ? 'AI卧底' : '玩家';
+    let label = typeName + ' ' + (player.id || '').substring(0, 4);
     if (player.host) label += ' (房主)';
     return label;
   }
@@ -269,7 +271,7 @@
 
       var dot = document.createElement('span');
       dot.className = 'player-dot';
-      dot.style.backgroundColor = isHost(p.id) ? '#22C55E' : '#64748B';
+      dot.style.backgroundColor = p.type === 'AI' ? '#F59E0B' : (isHost(p.id) ? '#22C55E' : '#64748B');
 
       var name = document.createElement('span');
       name.className = 'player-name';
@@ -356,7 +358,7 @@
 
       var dot = document.createElement('span');
       dot.className = 'player-dot';
-      dot.style.backgroundColor = p.alive ? (isHost(p.id) ? '#22C55E' : '#64748B') : '#DC2626';
+      dot.style.backgroundColor = p.alive ? (p.type === 'AI' ? '#F59E0B' : (isHost(p.id) ? '#22C55E' : '#64748B')) : '#DC2626';
 
       var name = document.createElement('span');
       name.className = 'player-name';
@@ -477,8 +479,13 @@
       return;
     }
 
-    if (data.remainingSeconds != null) {
-      state.timerEndsAt = Date.now() + data.remainingSeconds * 1000;
+    if (data.endsAt) {
+      state.timerEndsAt = new Date(data.endsAt).getTime();
+      if (data.serverNow) {
+        state.timerServerOffsetMs = new Date(data.serverNow).getTime() - Date.now();
+      } else if (data.remainingSeconds != null) {
+        state.timerServerOffsetMs = state.timerEndsAt - Date.now() - data.remainingSeconds * 1000;
+      }
       startTimerInterval();
     }
   }
@@ -487,7 +494,8 @@
     stopTimerInterval();
     var tick = function () {
       if (!state.timerEndsAt) return;
-      var remaining = Math.max(0, Math.ceil((state.timerEndsAt - Date.now()) / 1000));
+      var serverAdjustedNow = Date.now() + state.timerServerOffsetMs;
+      var remaining = Math.max(0, Math.ceil((state.timerEndsAt - serverAdjustedNow) / 1000));
       timerValue.textContent = formatTime(remaining);
 
       timerDisplay.classList.remove('warning', 'danger');
