@@ -27,6 +27,7 @@ import java.util.UUID;
 public class RoomService {
     private static final int MAX_HUMAN_PLAYERS = 8;
     private static final int MIN_HUMAN_PLAYERS_TO_START = 2;
+    private static final int DEFAULT_AI_UNDERCOVER_COUNT = 1;
 
     private final RoomRepository roomRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -100,6 +101,7 @@ public class RoomService {
         if (room.humanPlayerCount() < MIN_HUMAN_PLAYERS_TO_START) {
             throw new RoomException(RoomErrorCode.NOT_ENOUGH_PLAYERS, "At least two human players are required.");
         }
+        addMissingAiUndercoverPlayers(room);
         room.markChatting();
         roomRepository.save(room);
         eventPublisher.publishEvent(new RoomStartedEvent(roomCode));
@@ -163,6 +165,18 @@ public class RoomService {
     }
 
     /**
+     * 开局时补齐默认 AI 卧底。
+     *
+     * <p>当前 MVP 固定 1 个 AI。后续如果要支持多个 AI 或根据房间配置调整数量，可以把这个常量改成配置项。</p>
+     */
+    private void addMissingAiUndercoverPlayers(Room room) {
+        long missingAiCount = DEFAULT_AI_UNDERCOVER_COUNT - room.aiPlayerCount();
+        for (int i = 0; i < missingAiCount; i++) {
+            room.addPlayer(Player.ai(nextAiId(), nextToken()));
+        }
+    }
+
+    /**
      * 将 Room 转换为 RoomSnapshot，后者是一个只读视图，用于返回给客户端。RoomSnapshot 中不包含玩家 token，
      * @param room 房间
      * @return 房间快照
@@ -184,6 +198,15 @@ public class RoomService {
      */
     private String nextId() {
         return "player-" + UUID.randomUUID();
+    }
+
+    /**
+     * 生成 AI 玩家 ID。
+     *
+     * @return AI 玩家 ID
+     */
+    private String nextAiId() {
+        return "ai-" + UUID.randomUUID();
     }
 
     /**
