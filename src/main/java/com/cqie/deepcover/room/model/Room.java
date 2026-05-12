@@ -78,4 +78,10 @@ public class Room {
                 .filter(player -> player.type() == PlayerType.HUMAN)
                 .count();
     }
+
+    public long aiPlayerCount() {
+        return players.stream()
+                .filter(player -> player.type() == PlayerType.AI)
+                .count();
+    }
 }
