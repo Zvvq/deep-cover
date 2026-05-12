@@ -5,6 +5,8 @@ import com.cqie.deepcover.room.model.Room;
 import org.springframework.stereotype.Repository;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,6 +27,11 @@ public class InMemoryRoomRepository implements RoomRepository {
     @Override
     public Optional<Room> findByCode(String roomCode) {
         return Optional.ofNullable(rooms.get(roomCode));
+    }
+
+    @Override
+    public List<Room> findAll() {
+        return new ArrayList<>(rooms.values());
     }
 
     @Override

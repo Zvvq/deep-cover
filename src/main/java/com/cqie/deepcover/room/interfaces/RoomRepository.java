@@ -2,6 +2,7 @@ package com.cqie.deepcover.room.interfaces;
 
 import com.cqie.deepcover.room.model.Room;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -13,6 +14,8 @@ public interface RoomRepository {
     void save(Room room);
 
     Optional<Room> findByCode(String roomCode);
+
+    List<Room> findAll();
 
     void deleteByCode(String roomCode);
 
