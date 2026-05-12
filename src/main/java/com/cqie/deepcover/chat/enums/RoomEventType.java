@@ -6,5 +6,10 @@ package com.cqie.deepcover.chat.enums;
  * <p>现在只有聊天消息，后续投票开始、投票结果、AI 发言等事件也可以继续加在这里。</p>
  */
 public enum RoomEventType {
-    CHAT_MESSAGE
+    CHAT_MESSAGE,
+    VOTING_STARTED,
+    VOTE_UPDATED,
+    PLAYER_ELIMINATED,
+    ROUND_STARTED,
+    GAME_ENDED
 }
