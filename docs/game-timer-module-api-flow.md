@@ -105,6 +105,7 @@ status
   "durationSeconds": 300,
   "startedAt": "2026-05-09T03:00:00Z",
   "endsAt": "2026-05-09T03:05:00Z",
+  "serverNow": "2026-05-09T03:02:00Z",
   "remainingSeconds": 180
 }
 ```
@@ -113,6 +114,7 @@ status
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
+| `serverNow` | string | 后端生成快照时的服务端时间，前端用它校准本地倒计时 |
 | `remainingSeconds` | number | 后端根据当前时间和 `endsAt` 动态计算出的剩余秒数，最小为 0 |
 
 `remainingSeconds` 不直接存储在 `GameTimer` 中，而是查询时实时计算：
@@ -122,6 +124,15 @@ Duration.between(now, timer.endsAt()).toSeconds()
 ```
 
 这样可以避免每秒更新一次数据库或 Map。
+
+前端显示倒计时时，优先使用：
+
+```text
+serverOffset = serverNow - browserNow
+remaining = endsAt - (browserNow + serverOffset)
+```
+
+这样两个玩家即使请求接口的时间不同，也会用同一个服务端时间轴来显示倒计时。
 
 ### GameRoomEvent
 
@@ -188,6 +199,7 @@ HTTP 状态码：`200 OK`
   "durationSeconds": 300,
   "startedAt": "2026-05-09T03:00:00Z",
   "endsAt": "2026-05-09T03:05:00Z",
+  "serverNow": "2026-05-09T03:02:00Z",
   "remainingSeconds": 180
 }
 ```
@@ -234,7 +246,7 @@ timers.get(roomCode)
 GameTimerSnapshot.from(timer, clock.instant())
 ```
 
-16. `GameTimerSnapshot.from()` 根据当前时间计算 `remainingSeconds`。
+16. `GameTimerSnapshot.from()` 根据当前时间写入 `serverNow`，并计算 `remainingSeconds`。
 17. Controller 返回 `GameTimerSnapshot` 给前端。
 
 ## 自动启动计时器流程
@@ -383,6 +395,7 @@ GameTimer expiredTimer = timer.expire();
 ```text
 进入房间或刷新页面
 -> GET /api/rooms/{roomCode}/timer 拉一次权威快照
+-> 根据 serverNow 校准本地时间
 -> 根据 endsAt 在浏览器本地每秒刷新倒计时显示
 -> 继续订阅 /topic/rooms/{roomCode}/events
 -> 收到 TIMER_EXPIRED 后刷新页面状态或进入下一阶段 UI
