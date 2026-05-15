@@ -9,6 +9,7 @@ import com.cqie.deepcover.room.model.Room;
 import com.cqie.deepcover.room.record.Player;
 import com.cqie.deepcover.room.record.PlayerSnapshot;
 import com.cqie.deepcover.room.record.RoomCreateResult;
+import com.cqie.deepcover.room.record.RoomDestroyedEvent;
 import com.cqie.deepcover.room.record.RoomJoinResult;
 import com.cqie.deepcover.room.record.RoomStartedEvent;
 import com.cqie.deepcover.room.record.RoomSnapshot;
@@ -106,6 +107,7 @@ public class RoomService {
         if (player.host()) {
             room.markDestroyed();
             RoomSnapshot destroyedSnapshot = snapshot(room);
+            eventPublisher.publishEvent(new RoomDestroyedEvent(roomCode, "Host left the room."));
             roomRepository.deleteByCode(roomCode);
             return destroyedSnapshot;
         }
