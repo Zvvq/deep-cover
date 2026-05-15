@@ -16,8 +16,11 @@ import com.cqie.deepcover.room.service.RoomService;
 import com.cqie.deepcover.vote.enums.GameWinner;
 import com.cqie.deepcover.vote.interfaces.VoteRepository;
 import com.cqie.deepcover.vote.record.GameEndedPayload;
+import com.cqie.deepcover.vote.record.GameEndedEvent;
 import com.cqie.deepcover.vote.record.PlayerEliminatedPayload;
+import com.cqie.deepcover.vote.record.PlayerEliminatedEvent;
 import com.cqie.deepcover.vote.record.RoundStartedPayload;
+import com.cqie.deepcover.vote.record.RoundStartedEvent;
 import com.cqie.deepcover.vote.record.Vote;
 import com.cqie.deepcover.vote.record.VoteRequest;
 import com.cqie.deepcover.vote.record.VoteResult;
@@ -183,6 +186,7 @@ public class VoteService {
                     roomCode,
                     new RoomEvent(RoomEventType.ROUND_STARTED, new RoundStartedPayload(roomCode, session.roundNumber() + 1))
             );
+            applicationEventPublisher.publishEvent(new RoundStartedEvent(roomCode, session.roundNumber() + 1));
         }
 
         return new VoteResult(
@@ -241,7 +245,10 @@ public class VoteService {
                 .orElse(1);
     }
 
-    private VoteSnapshot systemSnapshot(String roomCode) {
+    /**
+     * 系统内部查询投票状态时使用，不绑定某个真人玩家 token。
+     */
+    public synchronized VoteSnapshot systemSnapshot(String roomCode) {
         VoteSession session = activeSession(roomCode);
         return snapshotFromSession(roomService.snapshot(roomCode), session, null);
     }
@@ -342,6 +349,12 @@ public class VoteService {
                         eliminatedPlayer.type()
                 ))
         );
+        applicationEventPublisher.publishEvent(new PlayerEliminatedEvent(
+                roomCode,
+                roundNumber,
+                eliminatedPlayer.id(),
+                eliminatedPlayer.type()
+        ));
     }
 
     private void publishGameEnded(String roomCode, GameWinner winner, PlayerSnapshot eliminatedPlayer) {
@@ -352,5 +365,6 @@ public class VoteService {
                 roomCode,
                 new RoomEvent(RoomEventType.GAME_ENDED, new GameEndedPayload(roomCode, winner, reason))
         );
+        applicationEventPublisher.publishEvent(new GameEndedEvent(roomCode, winner, reason));
     }
 }
