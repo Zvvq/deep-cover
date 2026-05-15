@@ -4,6 +4,7 @@ import com.cqie.deepcover.chat.enums.RoomEventType;
 import com.cqie.deepcover.chat.interfaces.ChatEventPublisher;
 import com.cqie.deepcover.chat.interfaces.ChatMessageRepository;
 import com.cqie.deepcover.chat.record.ChatMessage;
+import com.cqie.deepcover.chat.record.ChatMessageCreatedEvent;
 import com.cqie.deepcover.chat.record.ChatMessageRequest;
 import com.cqie.deepcover.chat.record.ChatMessageResponse;
 import com.cqie.deepcover.chat.record.RoomEvent;
@@ -11,6 +12,8 @@ import com.cqie.deepcover.room.enums.RoomErrorCode;
 import com.cqie.deepcover.room.exception.RoomException;
 import com.cqie.deepcover.room.record.Player;
 import com.cqie.deepcover.room.service.RoomService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -30,15 +33,28 @@ public class ChatService {
     private final RoomService roomService;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatEventPublisher chatEventPublisher;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     public ChatService(
             RoomService roomService,
             ChatMessageRepository chatMessageRepository,
             ChatEventPublisher chatEventPublisher
     ) {
+        this(roomService, chatMessageRepository, chatEventPublisher, event -> {
+        });
+    }
+
+    @Autowired
+    public ChatService(
+            RoomService roomService,
+            ChatMessageRepository chatMessageRepository,
+            ChatEventPublisher chatEventPublisher,
+            ApplicationEventPublisher applicationEventPublisher
+    ) {
         this.roomService = roomService;
         this.chatMessageRepository = chatMessageRepository;
         this.chatEventPublisher = chatEventPublisher;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     /**
@@ -86,6 +102,7 @@ public class ChatService {
 
         ChatMessageResponse response = ChatMessageResponse.from(message);
         chatEventPublisher.publish(roomCode, new RoomEvent(RoomEventType.CHAT_MESSAGE, response));
+        applicationEventPublisher.publishEvent(new ChatMessageCreatedEvent(roomCode, response));
         return response;
     }
 
