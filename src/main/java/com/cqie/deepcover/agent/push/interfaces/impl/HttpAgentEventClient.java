@@ -5,9 +5,12 @@ import com.cqie.deepcover.agent.push.interfaces.AgentEventClient;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+
+import java.net.http.HttpClient;
 
 /**
  * 通过 HTTP 把 Java 游戏事件推给 Python Agent。
@@ -26,7 +29,13 @@ public class HttpAgentEventClient implements AgentEventClient {
             @Value("${deep-cover.agent.event-path:/agent/rooms/{roomCode}/events}") String eventPath,
             @Value("${deep-cover.agent.internal-secret:dev-agent-secret}") String internalSecret
     ) {
-        this.restClient = restClientBuilder.baseUrl(baseUrl).build();
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+        this.restClient = restClientBuilder
+                .baseUrl(baseUrl)
+                .requestFactory(new JdkClientHttpRequestFactory(httpClient))
+                .build();
         this.objectMapper = objectMapper;
         this.eventPath = eventPath;
         this.internalSecret = internalSecret;
