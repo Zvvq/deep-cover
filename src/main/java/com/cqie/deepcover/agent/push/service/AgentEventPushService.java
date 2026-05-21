@@ -3,6 +3,8 @@ package com.cqie.deepcover.agent.push.service;
 import com.cqie.deepcover.agent.event.AgentEvent;
 import com.cqie.deepcover.agent.event.AgentEventType;
 import com.cqie.deepcover.agent.push.interfaces.AgentEventClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -10,12 +12,12 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Agent 事件推送服务。
- *
- * <p>游戏主流程不能因为 Python Agent 不可用而失败，所以这里会吞掉推送异常。</p>
+ * Pushes Java game events to the Python Agent Runtime.
  */
 @Service
 public class AgentEventPushService {
+    private static final Logger log = LoggerFactory.getLogger(AgentEventPushService.class);
+
     private final AgentEventClient agentEventClient;
     private final boolean enabled;
 
@@ -29,6 +31,7 @@ public class AgentEventPushService {
 
     public void push(String roomCode, AgentEventType type, Object payload) {
         if (!enabled) {
+            log.debug("Skip agent event push because deep-cover.agent.enabled=false, roomCode={}, type={}", roomCode, type);
             return;
         }
         AgentEvent event = new AgentEvent(
@@ -40,8 +43,9 @@ public class AgentEventPushService {
         );
         try {
             agentEventClient.push(roomCode, event);
-        } catch (RuntimeException ignored) {
-            // Python Agent 服务暂时不可用时，Java 游戏流程继续。
+        } catch (RuntimeException ex) {
+            log.warn("Failed to push agent event to Python, roomCode={}, type={}, eventId={}", roomCode, type, event.eventId(), ex);
+            // Python Agent service must not block the Java game flow.
         }
     }
 }
