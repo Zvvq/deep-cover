@@ -13,6 +13,8 @@ import com.cqie.deepcover.room.record.RoomDestroyedEvent;
 import com.cqie.deepcover.room.record.RoomJoinResult;
 import com.cqie.deepcover.room.record.RoomStartedEvent;
 import com.cqie.deepcover.room.record.RoomSnapshot;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,7 @@ import java.util.UUID;
  */
 @Service
 public class RoomService {
+    private static final Logger log = LoggerFactory.getLogger(RoomService.class);
     private static final int MAX_HUMAN_PLAYERS = 8;
     private static final int MIN_HUMAN_PLAYERS_TO_START = 2;
     private static final int DEFAULT_AI_UNDERCOVER_COUNT = 1;
@@ -54,6 +57,7 @@ public class RoomService {
         Player host = Player.humanHost(nextId(), nextToken());
         Room room = Room.createWaiting(roomCode, host);
         roomRepository.save(room);
+        log.info("房间创建成功，roomCode={}, hostPlayerId={}", roomCode, host.id());
         return new RoomCreateResult(roomCode, host.id(), host.token(), snapshot(room));
     }
 
@@ -72,6 +76,8 @@ public class RoomService {
         Player player = Player.human(nextId(), nextToken());
         room.addPlayer(player);
         roomRepository.save(room);
+        log.info("玩家加入房间，roomCode={}, playerId={}, humanPlayerCount={}",
+                roomCode, player.id(), room.humanPlayerCount());
         return new RoomJoinResult(roomCode, player.id(), player.token(), snapshot(room));
     }
 
@@ -95,6 +101,8 @@ public class RoomService {
         room.markChatting();
         roomRepository.save(room);
         eventPublisher.publishEvent(new RoomStartedEvent(roomCode));
+        log.info("房主开始游戏，roomCode={}, hostPlayerId={}, humanPlayerCount={}, aiPlayerCount={}",
+                roomCode, requester.id(), room.humanPlayerCount(), room.aiPlayerCount());
         return snapshot(room);
     }
 
@@ -109,11 +117,14 @@ public class RoomService {
             RoomSnapshot destroyedSnapshot = snapshot(room);
             eventPublisher.publishEvent(new RoomDestroyedEvent(roomCode, "Host left the room."));
             roomRepository.deleteByCode(roomCode);
+            log.info("房主离开并销毁房间，roomCode={}, hostPlayerId={}", roomCode, player.id());
             return destroyedSnapshot;
         }
 
         room.removePlayer(player.id());
         roomRepository.save(room);
+        log.info("玩家离开房间，roomCode={}, playerId={}, remainingHumanPlayerCount={}",
+                roomCode, player.id(), room.humanPlayerCount());
         return snapshot(room);
     }
 
@@ -175,6 +186,7 @@ public class RoomService {
         Room room = findRoom(roomCode);
         room.markVoting();
         roomRepository.save(room);
+        log.info("房间进入投票阶段，roomCode={}", roomCode);
         return snapshot(room);
     }
 
@@ -182,6 +194,7 @@ public class RoomService {
         Room room = findRoom(roomCode);
         room.markChatting();
         roomRepository.save(room);
+        log.info("房间进入聊天阶段，roomCode={}", roomCode);
         return snapshot(room);
     }
 
@@ -189,6 +202,7 @@ public class RoomService {
         Room room = findRoom(roomCode);
         room.markEnded();
         roomRepository.save(room);
+        log.info("房间已结束，roomCode={}", roomCode);
         return snapshot(room);
     }
 
@@ -198,6 +212,7 @@ public class RoomService {
         requireAlive(player);
         room.eliminatePlayer(playerId);
         roomRepository.save(room);
+        log.info("玩家被淘汰，roomCode={}, playerId={}, playerType={}", roomCode, player.id(), player.type());
         return snapshot(room);
     }
 

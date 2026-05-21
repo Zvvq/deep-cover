@@ -2,6 +2,8 @@ package com.cqie.deepcover.agent.internal.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -12,6 +14,8 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @Service
 public class AgentInternalAuthService {
+    private static final Logger log = LoggerFactory.getLogger(AgentInternalAuthService.class);
+
     private final String internalSecret;
 
     public AgentInternalAuthService(
@@ -22,6 +26,7 @@ public class AgentInternalAuthService {
 
     public void requireAuthorized(String providedSecret) {
         if (providedSecret == null || !providedSecret.equals(internalSecret)) {
+            log.warn("Agent 内部接口鉴权失败，providedSecretPresent={}", providedSecret != null);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid agent internal secret.");
         }
     }

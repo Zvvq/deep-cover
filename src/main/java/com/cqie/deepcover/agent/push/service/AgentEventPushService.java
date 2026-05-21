@@ -1,5 +1,6 @@
 package com.cqie.deepcover.agent.push.service;
 
+import com.cqie.deepcover.agent.event.AgentChatMessagePayload;
 import com.cqie.deepcover.agent.event.AgentEvent;
 import com.cqie.deepcover.agent.event.AgentEventType;
 import com.cqie.deepcover.agent.push.interfaces.AgentEventClient;
@@ -31,7 +32,7 @@ public class AgentEventPushService {
 
     public void push(String roomCode, AgentEventType type, Object payload) {
         if (!enabled) {
-            log.debug("Skip agent event push because deep-cover.agent.enabled=false, roomCode={}, type={}", roomCode, type);
+            log.debug("Agent 事件推送开关关闭，跳过推送，roomCode={}, type={}", roomCode, type);
             return;
         }
         AgentEvent event = new AgentEvent(
@@ -43,9 +44,15 @@ public class AgentEventPushService {
         );
         try {
             agentEventClient.push(roomCode, event);
+            if (payload instanceof AgentChatMessagePayload messagePayload) {
+                log.info("推送 Agent 聊天消息事件成功，roomCode={}, type={}, eventId={}, messageId={}, senderPlayerId={}, content={}",
+                        roomCode, type, event.eventId(), messagePayload.messageId(), messagePayload.senderPlayerId(), messagePayload.content());
+            } else {
+                log.info("推送 Agent 事件成功，roomCode={}, type={}, eventId={}", roomCode, type, event.eventId());
+            }
         } catch (RuntimeException ex) {
-            log.warn("Failed to push agent event to Python, roomCode={}, type={}, eventId={}", roomCode, type, event.eventId(), ex);
-            // Python Agent service must not block the Java game flow.
+            log.warn("推送 Agent 事件失败，Java 游戏流程继续执行，roomCode={}, type={}, eventId={}, exceptionType={}, message={}",
+                    roomCode, type, event.eventId(), ex.getClass().getSimpleName(), ex.getMessage());
         }
     }
 }

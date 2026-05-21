@@ -11,6 +11,8 @@ import com.cqie.deepcover.game.record.GameTimerSnapshot;
 import com.cqie.deepcover.game.record.TimerExpiredPayload;
 import com.cqie.deepcover.room.enums.RoomErrorCode;
 import com.cqie.deepcover.room.exception.RoomException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,8 @@ import java.time.Instant;
  */
 @Service
 public class GameTimerService {
+    private static final Logger log = LoggerFactory.getLogger(GameTimerService.class);
+
     private final GameTimerRepository gameTimerRepository;
     private final GameTimerEventPublisher gameTimerEventPublisher;
     private final Clock clock;
@@ -66,6 +70,8 @@ public class GameTimerService {
         Instant now = clock.instant();
         GameTimer timer = GameTimer.start(roomCode, phase, duration, now);
         gameTimerRepository.save(timer);
+        log.info("启动房间计时器，roomCode={}, phase={}, durationSeconds={}, startedAt={}, endsAt={}",
+                roomCode, phase, duration.toSeconds(), timer.startedAt(), timer.endsAt());
         return GameTimerSnapshot.from(timer, now);
     }
 
@@ -95,6 +101,9 @@ public class GameTimerService {
                 expiredCount++;
             }
         }
+        if (expiredCount > 0) {
+            log.info("计时器扫描完成，本次处理到期计时器数量={}", expiredCount);
+        }
         return expiredCount;
     }
 
@@ -110,5 +119,6 @@ public class GameTimerService {
                 new GameRoomEvent(GameEventType.TIMER_EXPIRED, payload)
         );
         applicationEventPublisher.publishEvent(new GameTimerExpiredEvent(timer.roomCode(), timer.phase(), expiredAt));
+        log.info("房间计时器到期，roomCode={}, phase={}, expiredAt={}", timer.roomCode(), timer.phase(), expiredAt);
     }
 }

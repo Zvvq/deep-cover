@@ -29,6 +29,8 @@ import com.cqie.deepcover.vote.record.VoteSnapshot;
 import com.cqie.deepcover.vote.record.VoteUpdatedPayload;
 import com.cqie.deepcover.vote.record.VotingStartedEvent;
 import com.cqie.deepcover.vote.record.VotingStartedPayload;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -52,6 +54,7 @@ import java.util.stream.Collectors;
  */
 @Service
 public class VoteService {
+    private static final Logger log = LoggerFactory.getLogger(VoteService.class);
     private static final Duration VOTING_DURATION = Duration.ofSeconds(60);
     private static final Duration CHATTING_DURATION = Duration.ofSeconds(300);
 
@@ -97,6 +100,7 @@ public class VoteService {
     public synchronized VoteSnapshot startVoting(String roomCode) {
         RoomSnapshot room = roomService.snapshot(roomCode);
         if (room.status() == RoomStatus.VOTING) {
+            log.info("房间已处于投票阶段，直接返回当前投票状态，roomCode={}", roomCode);
             return systemSnapshot(roomCode);
         }
         if (room.status() != RoomStatus.CHATTING) {
@@ -119,6 +123,8 @@ public class VoteService {
                 ))
         );
         applicationEventPublisher.publishEvent(new VotingStartedEvent(roomCode, session.roundNumber()));
+        log.info("开始投票，roomCode={}, roundNumber={}, alivePlayerCount={}, requiredVoteCount={}",
+                roomCode, session.roundNumber(), alivePlayers(room).size(), requiredVoteCount(room));
         return snapshotFromSession(room, session, null);
     }
 
@@ -127,7 +133,7 @@ public class VoteService {
      */
     public synchronized VoteResult castVote(String roomCode, String playerToken, VoteRequest request) {
         Player voter = roomService.requireVotingParticipant(roomCode, playerToken);
-        return castVoteByPlayer(roomCode, voter.id(), request == null ? null : request.targetPlayerId());
+        return castVoteByPlayer(roomCode, voter.id(), voter.type(), request == null ? null : request.targetPlayerId());
     }
 
     /**
@@ -135,7 +141,7 @@ public class VoteService {
      */
     public synchronized VoteResult castSystemVote(String roomCode, String voterPlayerId, String targetPlayerId) {
         Player voter = roomService.requireAliveAiVotingParticipant(roomCode, voterPlayerId);
-        return castVoteByPlayer(roomCode, voter.id(), targetPlayerId);
+        return castVoteByPlayer(roomCode, voter.id(), voter.type(), targetPlayerId);
     }
 
     public synchronized VoteSnapshot snapshot(String roomCode, String playerToken) {
@@ -163,6 +169,7 @@ public class VoteService {
     public synchronized VoteResult settleVoting(String roomCode) {
         RoomSnapshot room = roomService.snapshot(roomCode);
         if (room.status() != RoomStatus.VOTING) {
+            log.info("结算投票时房间不在投票阶段，跳过结算，roomCode={}, status={}", roomCode, room.status());
             return VoteResult.notSettled(roomCode, currentRound(roomCode));
         }
 
@@ -187,6 +194,7 @@ public class VoteService {
                     new RoomEvent(RoomEventType.ROUND_STARTED, new RoundStartedPayload(roomCode, session.roundNumber() + 1))
             );
             applicationEventPublisher.publishEvent(new RoundStartedEvent(roomCode, session.roundNumber() + 1));
+            log.info("进入下一轮聊天，roomCode={}, nextRoundNumber={}", roomCode, session.roundNumber() + 1);
         }
 
         return new VoteResult(
@@ -199,7 +207,7 @@ public class VoteService {
         );
     }
 
-    private VoteResult castVoteByPlayer(String roomCode, String voterPlayerId, String targetPlayerId) {
+    private VoteResult castVoteByPlayer(String roomCode, String voterPlayerId, PlayerType voterType, String targetPlayerId) {
         RoomSnapshot room = roomService.snapshot(roomCode);
         if (room.status() != RoomStatus.VOTING) {
             throw new RoomException(RoomErrorCode.ROOM_NOT_VOTING, "Room is not voting.");
@@ -214,8 +222,11 @@ public class VoteService {
         validateVoteTarget(room, voterPlayerId, targetPlayerId);
         voteRepository.save(new Vote(roomCode, session.roundNumber(), voterPlayerId, targetPlayerId, clock.instant()));
         publishVoteUpdated(roomCode, session.roundNumber());
+        int submittedVoteCount = voteRepository.findByRoomCodeAndRound(roomCode, session.roundNumber()).size();
+        log.info("玩家提交投票，roomCode={}, roundNumber={}, voterPlayerId={}, voterType={}, targetPlayerId={}, submittedVoteCount={}, requiredVoteCount={}",
+                roomCode, session.roundNumber(), voterPlayerId, voterType, targetPlayerId, submittedVoteCount, requiredVoteCount(room));
 
-        if (voteRepository.findByRoomCodeAndRound(roomCode, session.roundNumber()).size() >= requiredVoteCount(room)) {
+        if (submittedVoteCount >= requiredVoteCount(room)) {
             return settleVoting(roomCode);
         }
         return VoteResult.notSettled(roomCode, session.roundNumber());
@@ -285,6 +296,7 @@ public class VoteService {
 
     private String chooseEliminatedPlayer(RoomSnapshot room, List<Vote> votes) {
         if (votes.isEmpty()) {
+            log.info("投票阶段无人投票，随机淘汰存活玩家，roomCode={}", room.roomCode());
             return randomAlivePlayer(room).id();
         }
 
@@ -298,6 +310,7 @@ public class VoteService {
                 .filter(entry -> entry.getValue() == maxVoteCount)
                 .map(Map.Entry::getKey)
                 .toList();
+        log.info("投票统计完成，roomCode={}, voteCounts={}, topTargets={}", room.roomCode(), voteCounts, topTargets);
         return topTargets.get(random.nextInt(topTargets.size()));
     }
 
@@ -355,6 +368,8 @@ public class VoteService {
                 eliminatedPlayer.id(),
                 eliminatedPlayer.type()
         ));
+        log.info("投票结算淘汰玩家，roomCode={}, roundNumber={}, eliminatedPlayerId={}, playerType={}",
+                roomCode, roundNumber, eliminatedPlayer.id(), eliminatedPlayer.type());
     }
 
     private void publishGameEnded(String roomCode, GameWinner winner, PlayerSnapshot eliminatedPlayer) {
@@ -366,5 +381,6 @@ public class VoteService {
                 new RoomEvent(RoomEventType.GAME_ENDED, new GameEndedPayload(roomCode, winner, reason))
         );
         applicationEventPublisher.publishEvent(new GameEndedEvent(roomCode, winner, reason));
+        log.info("游戏结束，roomCode={}, winner={}, reason={}", roomCode, winner, reason);
     }
 }

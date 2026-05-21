@@ -1,6 +1,8 @@
 package com.cqie.deepcover.room.exception;
 
 import com.cqie.deepcover.room.record.RoomDtos;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice
 public class RoomExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(RoomExceptionHandler.class);
 
     @ExceptionHandler(RoomException.class)
     public ResponseEntity<RoomDtos.ErrorResponse> handleRoomException(RoomException exception) {
@@ -24,6 +27,8 @@ public class RoomExceptionHandler {
                  DUPLICATE_VOTE -> HttpStatus.BAD_REQUEST;
         };
 
+        log.warn("业务请求处理失败，errorCode={}, httpStatus={}, message={}",
+                exception.getErrorCode(), status.value(), exception.getMessage());
         return ResponseEntity
                 .status(status)
                 .body(new RoomDtos.ErrorResponse(exception.getErrorCode().name(), exception.getMessage()));

@@ -12,6 +12,8 @@ import com.cqie.deepcover.room.enums.RoomErrorCode;
 import com.cqie.deepcover.room.exception.RoomException;
 import com.cqie.deepcover.room.record.Player;
 import com.cqie.deepcover.room.service.RoomService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,7 @@ import java.util.UUID;
  */
 @Service
 public class ChatService {
+    private static final Logger log = LoggerFactory.getLogger(ChatService.class);
     private static final int MAX_CONTENT_LENGTH = 300;
 
     private final RoomService roomService;
@@ -67,7 +70,7 @@ public class ChatService {
         String content = normalizeContent(request.content());
         Player sender = roomService.requireChatParticipant(roomCode, request.playerToken());
 
-        return saveAndPublish(roomCode, sender.id(), content);
+        return saveAndPublish(roomCode, sender.id(), content, "真人玩家");
     }
 
     /**
@@ -77,7 +80,7 @@ public class ChatService {
         String normalizedContent = normalizeContent(content);
         Player sender = roomService.requireAliveAiChatParticipant(roomCode, aiPlayerId);
 
-        return saveAndPublish(roomCode, sender.id(), normalizedContent);
+        return saveAndPublish(roomCode, sender.id(), normalizedContent, "AI玩家");
     }
 
     /**
@@ -90,7 +93,7 @@ public class ChatService {
                 .toList();
     }
 
-    private ChatMessageResponse saveAndPublish(String roomCode, String senderPlayerId, String content) {
+    private ChatMessageResponse saveAndPublish(String roomCode, String senderPlayerId, String content, String senderType) {
         ChatMessage message = new ChatMessage(
                 nextMessageId(),
                 roomCode,
@@ -103,6 +106,8 @@ public class ChatService {
         ChatMessageResponse response = ChatMessageResponse.from(message);
         chatEventPublisher.publish(roomCode, new RoomEvent(RoomEventType.CHAT_MESSAGE, response));
         applicationEventPublisher.publishEvent(new ChatMessageCreatedEvent(roomCode, response));
+        log.info("{}发送聊天消息，roomCode={}, messageId={}, playerId={}, content={}",
+                senderType, roomCode, response.id(), senderPlayerId, content);
         return response;
     }
 
