@@ -110,11 +110,49 @@
     return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   }
 
+  const playerColorPalette = {
+    RED: { value: '#EF4444', label: '红色' },
+    BLUE: { value: '#3B82F6', label: '蓝色' },
+    GREEN: { value: '#22C55E', label: '绿色' },
+    YELLOW: { value: '#EAB308', label: '黄色' },
+    PURPLE: { value: '#A855F7', label: '紫色' },
+    ORANGE: { value: '#F97316', label: '橙色' },
+    CYAN: { value: '#06B6D4', label: '青色' },
+    PINK: { value: '#EC4899', label: '粉色' },
+    GRAY: { value: '#94A3B8', label: '灰色' },
+    BROWN: { value: '#92400E', label: '棕色' },
+    LIME: { value: '#84CC16', label: '青柠' },
+    TEAL: { value: '#14B8A6', label: '蓝绿' },
+  };
+
+  const chineseNumbers = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
+
+  function playerNumberLabel(player) {
+    if (!player || player.number == null) return null;
+    var number = Number(player.number);
+    var text = chineseNumbers[number] || String(number);
+    return '玩家' + text + '号';
+  }
+
+  function playerColorValue(color) {
+    if (!color) return null;
+    var entry = playerColorPalette[String(color).toUpperCase()];
+    return entry ? entry.value : color;
+  }
+
+  function playerColorLabel(color) {
+    if (!color) return '';
+    var entry = playerColorPalette[String(color).toUpperCase()];
+    return entry ? entry.label : color;
+  }
+
   function playerLabel(player) {
-    var typeName = player.type === 'AI' ? 'AI卧底' : '玩家';
-    let label = typeName + ' ' + (player.id || '').substring(0, 4);
-    if (player.host) label += ' (房主)';
-    return label;
+    var assignedLabel = playerNumberLabel(player);
+    return assignedLabel || '玩家';
+  }
+
+  function playerDotColor(player, fallbackColor) {
+    return playerColorValue(player && player.color) || fallbackColor;
   }
 
   function isHost(playerId) {
@@ -135,7 +173,7 @@
   function playerNameById(playerId) {
     var player = state.currentPlayers.find(function (p) { return p.id === playerId; });
     if (player) return playerLabel(player);
-    return '玩家 ' + (playerId || '').substring(0, 4);
+    return '玩家';
   }
 
   function winnerLabel(winner) {
@@ -368,7 +406,7 @@
 
       var dot = document.createElement('span');
       dot.className = 'player-dot';
-      dot.style.backgroundColor = p.type === 'AI' ? '#F59E0B' : (isHost(p.id) ? '#22C55E' : '#64748B');
+      dot.style.backgroundColor = playerDotColor(p, p.host ? '#22C55E' : '#64748B');
 
       var name = document.createElement('span');
       name.className = 'player-name';
@@ -542,7 +580,7 @@
 
       var dot = document.createElement('span');
       dot.className = 'player-dot';
-      dot.style.backgroundColor = p.alive ? (p.type === 'AI' ? '#F59E0B' : (isHost(p.id) ? '#22C55E' : '#64748B')) : '#DC2626';
+      dot.style.backgroundColor = p.alive ? playerDotColor(p, p.host ? '#22C55E' : '#64748B') : '#DC2626';
 
       var name = document.createElement('span');
       name.className = 'player-name';
@@ -603,7 +641,7 @@
 
       var meta = document.createElement('span');
       meta.className = 'vote-candidate-meta';
-      meta.textContent = player.id.substring(0, 8);
+      meta.textContent = playerColorLabel(player.color);
 
       button.appendChild(name);
       button.appendChild(meta);
@@ -694,7 +732,7 @@
 
     var sender = document.createElement('div');
     sender.className = 'chat-msg-sender';
-    sender.textContent = isMine ? '你' : ('玩家 ' + (msg.senderPlayerId || '').substring(0, 4));
+    sender.textContent = isMine ? ('你 · ' + playerNameById(state.playerId)) : playerNameById(msg.senderPlayerId);
 
     var content = document.createElement('div');
     content.className = 'chat-msg-content';
