@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
 
 /**
  * 房间聚合对象，保存 room 模块自己的核心状态。
@@ -16,6 +17,21 @@ import java.util.Optional;
  * 避免把所有玩法逻辑塞进这个对象。</p>
  */
 public class Room {
+    private static final List<String> PLAYER_COLORS = List.of(
+            "RED",
+            "BLUE",
+            "GREEN",
+            "YELLOW",
+            "PURPLE",
+            "ORANGE",
+            "CYAN",
+            "PINK",
+            "GRAY",
+            "BROWN",
+            "LIME",
+            "TEAL"
+    );
+
     private final String roomCode;
     private final String hostPlayerId;
     private final List<Player> players;
@@ -55,6 +71,20 @@ public class Room {
 
     public void removePlayer(String playerId) {
         players.removeIf(player -> player.id().equals(playerId));
+    }
+
+    /**
+     * 开局时随机打乱玩家顺序，并按打乱后的顺序分配前端展示用的序号和颜色。
+     */
+    public void assignPlayerIdentities(Random random) {
+        if (players.size() > PLAYER_COLORS.size()) {
+            throw new IllegalStateException("Player color pool is not enough.");
+        }
+
+        Collections.shuffle(players, random);
+        for (int i = 0; i < players.size(); i++) {
+            players.set(i, players.get(i).assignIdentity(i + 1, PLAYER_COLORS.get(i)));
+        }
     }
 
     public void markChatting() {

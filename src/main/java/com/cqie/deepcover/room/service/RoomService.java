@@ -19,7 +19,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 
 /**
@@ -37,6 +39,7 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final Random random = new SecureRandom();
 
     public RoomService(RoomRepository roomRepository) {
         this(roomRepository, event -> {
@@ -98,6 +101,7 @@ public class RoomService {
             throw new RoomException(RoomErrorCode.NOT_ENOUGH_PLAYERS, "At least two human players are required.");
         }
         addMissingAiUndercoverPlayers(room);
+        room.assignPlayerIdentities(random);
         room.markChatting();
         roomRepository.save(room);
         eventPublisher.publishEvent(new RoomStartedEvent(roomCode));

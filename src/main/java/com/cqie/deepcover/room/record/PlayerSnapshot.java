@@ -9,6 +9,8 @@ import com.cqie.deepcover.room.enums.PlayerType;
  */
 public record PlayerSnapshot(
         String id,
+        Integer number,
+        String color,
         PlayerType type,
         boolean alive,
         boolean host
@@ -17,6 +19,13 @@ public record PlayerSnapshot(
      * 从内部玩家对象转换成对外快照。
      */
     public static PlayerSnapshot from(Player player) {
-        return new PlayerSnapshot(player.id(), player.type(), player.alive(), player.host());
+        return new PlayerSnapshot(
+                player.id(),
+                player.number(),
+                player.color(),
+                player.type(),
+                player.alive(),
+                player.host()
+        );
     }
 }

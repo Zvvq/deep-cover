@@ -46,4 +46,11 @@ public record Player(
     public Player eliminate() {
         return new Player(id, token, number, color, type, false, host);
     }
+
+    /**
+     * 开局分配玩家序号和颜色。Player 是不可变 record，所以返回新的玩家对象。
+     */
+    public Player assignIdentity(Integer number, String color) {
+        return new Player(id, token, number, color, type, alive, host);
+    }
 }
