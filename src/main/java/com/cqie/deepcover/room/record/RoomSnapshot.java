@@ -1,6 +1,7 @@
 package com.cqie.deepcover.room.record;
 
 import com.cqie.deepcover.room.enums.RoomStatus;
+import com.cqie.deepcover.topic.record.TopicSnapshot;
 
 import java.util.List;
 
@@ -14,10 +15,20 @@ public record RoomSnapshot(
         String roomCode,
         RoomStatus status,
         String hostPlayerId,
-        List<PlayerSnapshot> players
+        List<PlayerSnapshot> players,
+        TopicSnapshot topic
 ) {
     public RoomSnapshot {
         // 防止外部持有原始 List 后继续修改快照内容。
         players = List.copyOf(players);
+    }
+
+    public RoomSnapshot(
+            String roomCode,
+            RoomStatus status,
+            String hostPlayerId,
+            List<PlayerSnapshot> players
+    ) {
+        this(roomCode, status, hostPlayerId, players, null);
     }
 }

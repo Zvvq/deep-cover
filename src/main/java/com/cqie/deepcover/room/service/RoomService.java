@@ -13,6 +13,9 @@ import com.cqie.deepcover.room.record.RoomDestroyedEvent;
 import com.cqie.deepcover.room.record.RoomJoinResult;
 import com.cqie.deepcover.room.record.RoomStartedEvent;
 import com.cqie.deepcover.room.record.RoomSnapshot;
+import com.cqie.deepcover.topic.interfaces.impl.InMemoryTopicRepository;
+import com.cqie.deepcover.topic.record.TopicSnapshot;
+import com.cqie.deepcover.topic.service.TopicService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,17 +42,27 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final TopicService topicService;
     private final Random random = new SecureRandom();
 
     public RoomService(RoomRepository roomRepository) {
         this(roomRepository, event -> {
-        });
+        }, defaultTopicService());
+    }
+
+    public RoomService(RoomRepository roomRepository, ApplicationEventPublisher eventPublisher) {
+        this(roomRepository, eventPublisher, defaultTopicService());
     }
 
     @Autowired
-    public RoomService(RoomRepository roomRepository, ApplicationEventPublisher eventPublisher) {
+    public RoomService(
+            RoomRepository roomRepository,
+            ApplicationEventPublisher eventPublisher,
+            TopicService topicService
+    ) {
         this.roomRepository = roomRepository;
         this.eventPublisher = eventPublisher;
+        this.topicService = topicService;
     }
 
     /**
@@ -102,11 +115,13 @@ public class RoomService {
         }
         addMissingAiUndercoverPlayers(room);
         room.assignPlayerIdentities(random);
+        assignNewTopic(room);
         room.markChatting();
         roomRepository.save(room);
         eventPublisher.publishEvent(new RoomStartedEvent(roomCode));
-        log.info("房主开始游戏，roomCode={}, hostPlayerId={}, humanPlayerCount={}, aiPlayerCount={}",
-                roomCode, requester.id(), room.humanPlayerCount(), room.aiPlayerCount());
+        log.info("房主开始游戏，roomCode={}, hostPlayerId={}, humanPlayerCount={}, aiPlayerCount={}, topicId={}, topicContent={}",
+                roomCode, requester.id(), room.humanPlayerCount(), room.aiPlayerCount(),
+                room.topic().id(), room.topic().content());
         return snapshot(room);
     }
 
@@ -202,6 +217,16 @@ public class RoomService {
         return snapshot(room);
     }
 
+    public synchronized RoomSnapshot markChattingWithNewTopic(String roomCode) {
+        Room room = findRoom(roomCode);
+        assignNewTopic(room);
+        room.markChatting();
+        roomRepository.save(room);
+        log.info("房间进入新一轮聊天阶段，roomCode={}, topicId={}, topicContent={}",
+                roomCode, room.topic().id(), room.topic().content());
+        return snapshot(room);
+    }
+
     public synchronized RoomSnapshot markEnded(String roomCode) {
         Room room = findRoom(roomCode);
         room.markEnded();
@@ -274,8 +299,18 @@ public class RoomService {
                 room.hostPlayerId(),
                 room.players().stream()
                         .map(PlayerSnapshot::from)
-                        .toList()
+                        .toList(),
+                room.topic()
         );
+    }
+
+    private void assignNewTopic(Room room) {
+        TopicSnapshot topic = topicService.randomTopic();
+        room.assignTopic(topic);
+    }
+
+    private static TopicService defaultTopicService() {
+        return new TopicService(new InMemoryTopicRepository());
     }
 
     private String nextId() {

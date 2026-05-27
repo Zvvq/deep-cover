@@ -3,6 +3,7 @@ package com.cqie.deepcover.room.model;
 import com.cqie.deepcover.room.enums.PlayerType;
 import com.cqie.deepcover.room.enums.RoomStatus;
 import com.cqie.deepcover.room.record.Player;
+import com.cqie.deepcover.topic.record.TopicSnapshot;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,6 +37,7 @@ public class Room {
     private final String hostPlayerId;
     private final List<Player> players;
     private RoomStatus status;
+    private TopicSnapshot topic;
 
     private Room(String roomCode, Player host) {
         this.roomCode = roomCode;
@@ -65,6 +67,10 @@ public class Room {
         return Collections.unmodifiableList(players);
     }
 
+    public TopicSnapshot topic() {
+        return topic;
+    }
+
     public void addPlayer(Player player) {
         players.add(player);
     }
@@ -85,6 +91,10 @@ public class Room {
         for (int i = 0; i < players.size(); i++) {
             players.set(i, players.get(i).assignIdentity(i + 1, PLAYER_COLORS.get(i)));
         }
+    }
+
+    public void assignTopic(TopicSnapshot topic) {
+        this.topic = topic;
     }
 
     public void markChatting() {
