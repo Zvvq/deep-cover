@@ -187,14 +187,23 @@ public class VoteService {
             roomService.markEnded(roomCode);
             publishGameEnded(roomCode, winner, eliminatedPlayer);
         } else {
-            roomService.markChatting(roomCode);
+            RoomSnapshot nextRoundRoom = roomService.markChattingWithNewTopic(roomCode);
             gameTimerService.startTimer(roomCode, GamePhase.CHATTING, CHATTING_DURATION);
             chatEventPublisher.publish(
                     roomCode,
-                    new RoomEvent(RoomEventType.ROUND_STARTED, new RoundStartedPayload(roomCode, session.roundNumber() + 1))
+                    new RoomEvent(RoomEventType.ROUND_STARTED, new RoundStartedPayload(
+                            roomCode,
+                            session.roundNumber() + 1,
+                            nextRoundRoom.topic()
+                    ))
             );
-            applicationEventPublisher.publishEvent(new RoundStartedEvent(roomCode, session.roundNumber() + 1));
-            log.info("进入下一轮聊天，roomCode={}, nextRoundNumber={}", roomCode, session.roundNumber() + 1);
+            applicationEventPublisher.publishEvent(new RoundStartedEvent(
+                    roomCode,
+                    session.roundNumber() + 1,
+                    nextRoundRoom.topic()
+            ));
+            log.info("进入下一轮聊天，roomCode={}, nextRoundNumber={}, topicId={}, topicContent={}",
+                    roomCode, session.roundNumber() + 1, nextRoundRoom.topic().id(), nextRoundRoom.topic().content());
         }
 
         return new VoteResult(
