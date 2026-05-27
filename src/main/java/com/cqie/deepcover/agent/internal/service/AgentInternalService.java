@@ -58,6 +58,7 @@ public class AgentInternalService {
         AgentRoomStateResponse response = new AgentRoomStateResponse(
                 room.roomCode(),
                 room.status(),
+                room.topic(),
                 voteService.currentRound(roomCode),
                 aliveCount(room, PlayerType.HUMAN),
                 aliveCount(room, PlayerType.AI),
@@ -70,8 +71,9 @@ public class AgentInternalService {
                         ))
                         .toList()
         );
-        log.info("Agent 查询房间状态，roomCode={}, status={}, roundNumber={}, aliveHumanCount={}, aliveAiCount={}",
-                roomCode, response.status(), response.roundNumber(), response.aliveHumanCount(), response.aliveAiCount());
+        log.info("Agent 查询房间状态，roomCode={}, status={}, topicId={}, roundNumber={}, aliveHumanCount={}, aliveAiCount={}",
+                roomCode, response.status(), response.topic() == null ? null : response.topic().id(),
+                response.roundNumber(), response.aliveHumanCount(), response.aliveAiCount());
         return response;
     }
 

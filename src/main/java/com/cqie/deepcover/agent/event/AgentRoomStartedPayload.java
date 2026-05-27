@@ -1,5 +1,7 @@
 package com.cqie.deepcover.agent.event;
 
+import com.cqie.deepcover.topic.record.TopicSnapshot;
+
 import java.util.List;
 
 /**
@@ -7,6 +9,7 @@ import java.util.List;
  */
 public record AgentRoomStartedPayload(
         String roomCode,
+        TopicSnapshot topic,
         List<String> aiPlayerIds
 ) {
 }

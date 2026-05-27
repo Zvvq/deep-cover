@@ -44,6 +44,7 @@ public class AgentEventListener {
                 AgentEventType.ROOM_STARTED,
                 new AgentRoomStartedPayload(
                         event.roomCode(),
+                        room.topic(),
                         room.players().stream()
                                 .filter(player -> player.type() == PlayerType.AI)
                                 .map(PlayerSnapshot::id)
@@ -97,7 +98,7 @@ public class AgentEventListener {
         agentEventPushService.push(
                 event.roomCode(),
                 AgentEventType.ROUND_STARTED,
-                new AgentRoundStartedPayload(event.roundNumber())
+                new AgentRoundStartedPayload(event.roundNumber(), event.topic())
         );
     }
 
