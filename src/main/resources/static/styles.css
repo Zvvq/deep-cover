@@ -384,6 +384,16 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
 }
 .player-badge.you { background: rgba(21, 128, 61, 0.15); color: var(--color-success); }
 
+.player-color-label {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-muted);
+}
+
 .count-badge {
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -474,6 +484,29 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
   flex-direction: column;
   overflow: hidden;
   border-right: 1px solid var(--color-border);
+}
+
+.topic-panel {
+  padding: 12px var(--spacing-md);
+  background: rgba(22, 37, 54, 0.92);
+  border-bottom: 1px solid var(--color-border-visible);
+}
+
+.topic-panel[hidden] { display: none; }
+
+.topic-label {
+  display: block;
+  color: var(--color-accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.topic-content {
+  margin-top: 3px;
+  color: var(--color-foreground);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .vote-panel {

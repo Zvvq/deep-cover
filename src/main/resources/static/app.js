@@ -19,6 +19,7 @@
     timerServerOffsetMs: 0,
     currentRoomStatus: null,
     currentPlayers: [],
+    currentTopic: null,
     voteSnapshot: null,
     voteCandidateIds: [],
     voteSubmitting: false,
@@ -45,6 +46,7 @@
     state.playerToken = null;
     state.currentRoomStatus = null;
     state.currentPlayers = [];
+    state.currentTopic = null;
     state.voteSnapshot = null;
     state.voteCandidateIds = [];
     state.voteSubmitting = false;
@@ -84,6 +86,8 @@
   const timerValue = $('#timer-value');
   const timerDisplay = $('#timer-display');
   const gamePhaseBadge = $('#game-phase-badge');
+  const topicPanel = $('#topic-panel');
+  const topicContent = $('#topic-content');
   const votePanel = $('#vote-panel');
   const voteProgress = $('#vote-progress');
   const voteStatus = $('#vote-status');
@@ -141,14 +145,14 @@
   }
 
   function playerColorLabel(color) {
-    if (!color) return '';
+    if (!color) return '等待分配';
     var entry = playerColorPalette[String(color).toUpperCase()];
     return entry ? entry.label : color;
   }
 
   function playerLabel(player) {
     var assignedLabel = playerNumberLabel(player);
-    return assignedLabel || '玩家';
+    return assignedLabel || '等待分配';
   }
 
   function playerDotColor(player, fallbackColor) {
@@ -186,6 +190,29 @@
     chatInput.disabled = !enabled;
     chatInput.placeholder = placeholder;
     btnSend.disabled = !enabled || chatInput.value.trim().length === 0;
+  }
+
+  function updateTopicDisplay(topic) {
+    state.currentTopic = topic || null;
+
+    var content = topic && topic.content ? String(topic.content).trim() : '';
+    if (!topicPanel || !topicContent) return;
+
+    if (!content) {
+      topicContent.textContent = '';
+      topicPanel.hidden = true;
+      return;
+    }
+
+    topicContent.textContent = content;
+    topicPanel.hidden = false;
+  }
+
+  function appendPlayerColorLabel(container, player) {
+    var colorLabel = document.createElement('span');
+    colorLabel.className = 'player-color-label';
+    colorLabel.textContent = playerColorLabel(player && player.color);
+    container.appendChild(colorLabel);
   }
 
   // ==================== TOAST ====================
@@ -414,6 +441,7 @@
 
       li.appendChild(dot);
       li.appendChild(name);
+      appendPlayerColorLabel(li, p);
 
       if (p.host) {
         var badge = document.createElement('span');
@@ -491,6 +519,7 @@
     state.roomCode = snapshot.roomCode || state.roomCode;
     gameRoomCode.textContent = snapshot.roomCode;
     renderGamePlayers(snapshot.players || []);
+    updateTopicDisplay(snapshot.topic);
 
     if (snapshot.status === 'VOTING') {
       if (previousStatus !== 'CHATTING') {
@@ -509,6 +538,7 @@
     try {
       var snapshot = await API.snapshot();
       if (snapshot.status === 'WAITING') {
+        updateTopicDisplay(null);
         renderWaiting(snapshot);
         showView(waitingView);
       } else if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING' || snapshot.status === 'ENDED') {
@@ -592,6 +622,7 @@
 
       li.appendChild(dot);
       li.appendChild(name);
+      appendPlayerColorLabel(li, p);
       li.appendChild(status);
 
       gamePlayerList.appendChild(li);
@@ -1010,6 +1041,7 @@
 
   function handleRoundStarted(payload) {
     if (!payload) return;
+    updateTopicDisplay(payload.topic);
     addEventMessage('第 ' + payload.roundNumber + ' 轮讨论开始');
     state.voteSnapshot = null;
     state.voteCandidateIds = [];
