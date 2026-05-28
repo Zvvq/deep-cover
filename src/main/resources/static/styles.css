@@ -627,29 +627,69 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
 }
 
 .chat-msg {
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  max-width: 75%;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  max-width: 82%;
 }
-.chat-msg.self { align-self: flex-end; background: rgba(21, 128, 61, 0.15); border: 1px solid rgba(21, 128, 61, 0.2); }
+.chat-msg.self {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
 .chat-msg.event {
   align-self: center;
+  display: block;
+  padding: 8px 12px;
   background: transparent;
   font-size: 0.78rem;
   color: var(--color-text-muted);
   font-style: italic;
 }
 
+.chat-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-primary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+
+.chat-msg-body {
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.chat-msg.self .chat-msg-body {
+  background: rgba(21, 128, 61, 0.15);
+  border: 1px solid rgba(21, 128, 61, 0.2);
+}
+
+.chat-msg-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
 .chat-msg-sender {
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--color-accent);
-  margin-bottom: 2px;
 }
 .chat-msg.self .chat-msg-sender { color: var(--color-success); }
 
 .chat-msg-content {
+  margin-top: 2px;
   font-size: 0.9rem;
   line-height: 1.45;
   word-break: break-word;
@@ -658,8 +698,7 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
 .chat-msg-time {
   font-size: 0.68rem;
   color: var(--color-text-muted);
-  margin-top: 4px;
-  text-align: right;
+  white-space: nowrap;
 }
 
 /* ---- Chat Input ---- */
@@ -719,6 +758,10 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.
 
   .vote-candidates {
     grid-template-columns: 1fr;
+  }
+
+  .chat-msg {
+    max-width: 100%;
   }
 }
 

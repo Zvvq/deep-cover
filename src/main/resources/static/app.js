@@ -129,13 +129,9 @@
     TEAL: { value: '#14B8A6', label: '蓝绿' },
   };
 
-  const chineseNumbers = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
-
   function playerNumberLabel(player) {
     if (!player || player.number == null) return null;
-    var number = Number(player.number);
-    var text = chineseNumbers[number] || String(number);
-    return '玩家' + text + '号';
+    return '玩家' + playerAvatarNumber(player) + '号';
   }
 
   function playerColorValue(color) {
@@ -155,6 +151,12 @@
     return assignedLabel || '等待分配';
   }
 
+  function playerAvatarNumber(player) {
+    if (!player || player.number == null) return '?';
+    var number = Number(player.number);
+    return Number.isFinite(number) ? String(number) : String(player.number);
+  }
+
   function playerDotColor(player, fallbackColor) {
     return playerColorValue(player && player.color) || fallbackColor;
   }
@@ -163,10 +165,14 @@
     return state.playerId === playerId;
   }
 
-  function currentPlayer() {
+  function playerById(playerId) {
     return state.currentPlayers.find(function (player) {
-      return player.id === state.playerId;
+      return player.id === playerId;
     }) || null;
+  }
+
+  function currentPlayer() {
+    return playerById(state.playerId);
   }
 
   function isCurrentPlayerAlive() {
@@ -175,7 +181,7 @@
   }
 
   function playerNameById(playerId) {
-    var player = state.currentPlayers.find(function (p) { return p.id === playerId; });
+    var player = playerById(playerId);
     if (player) return playerLabel(player);
     return '玩家';
   }
@@ -759,7 +765,20 @@
 
     var div = document.createElement('div');
     var isMine = msg.senderPlayerId === state.playerId;
+    var senderPlayer = playerById(msg.senderPlayerId);
     div.className = 'chat-msg' + (isMine ? ' self' : '');
+
+    var avatar = document.createElement('div');
+    avatar.className = 'chat-avatar';
+    avatar.style.backgroundColor = playerDotColor(senderPlayer, '#64748B');
+    avatar.textContent = playerAvatarNumber(senderPlayer);
+    avatar.title = playerNameById(msg.senderPlayerId);
+
+    var body = document.createElement('div');
+    body.className = 'chat-msg-body';
+
+    var header = document.createElement('div');
+    header.className = 'chat-msg-header';
 
     var sender = document.createElement('div');
     sender.className = 'chat-msg-sender';
@@ -773,9 +792,12 @@
     time.className = 'chat-msg-time';
     time.textContent = formatISOTime(msg.createdAt);
 
-    div.appendChild(sender);
-    div.appendChild(content);
-    div.appendChild(time);
+    header.appendChild(sender);
+    header.appendChild(time);
+    body.appendChild(header);
+    body.appendChild(content);
+    div.appendChild(avatar);
+    div.appendChild(body);
     chatMessages.appendChild(div);
   }
 
