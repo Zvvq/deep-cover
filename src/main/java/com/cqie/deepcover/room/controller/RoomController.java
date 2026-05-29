@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,10 +35,15 @@ public class RoomController {
      * @return 创建房间的响应
      */
     @PostMapping
-    public ResponseEntity<RoomDtos.CreateRoomResponse> createRoom() {
+    public ResponseEntity<RoomDtos.CreateRoomResponse> createRoom(
+            @RequestBody(required = false) RoomDtos.CreateRoomRequest request
+    ) {
+        var result = request == null || request.gameMode() == null
+                ? roomService.createRoom()
+                : roomService.createRoom(request.gameMode());
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(RoomDtos.CreateRoomResponse.from(roomService.createRoom()));
+                .body(RoomDtos.CreateRoomResponse.from(result));
     }
 
     /**
