@@ -7,6 +7,8 @@ package com.cqie.deepcover.chat.enums;
  */
 public enum RoomEventType {
     CHAT_MESSAGE,
+    WORD_DESCRIPTION_SUBMITTED,
+    WORD_ROUND_STARTED,
     VOTING_STARTED,
     VOTE_UPDATED,
     PLAYER_ELIMINATED,
