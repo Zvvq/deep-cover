@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260529-word-undercover">
+  <link rel="stylesheet" href="styles.css?v=20260529-word-descriptions">
 </head>
 <body>
 
@@ -141,6 +141,23 @@
             <div id="word-value" class="word-value">正在加载</div>
           </div>
           <p id="word-hint" class="word-hint">等待后续描述模块</p>
+          <div class="word-description-status">
+            <span id="word-round" class="word-meta-pill">第 1 轮</span>
+            <span id="word-current-turn" class="word-current-turn">正在加载描述顺序</span>
+          </div>
+          <div id="word-description-list" class="word-description-list"></div>
+          <p id="word-description-wait" class="word-hint">等待当前玩家描述</p>
+          <form id="word-description-form" class="word-description-form" autocomplete="off" hidden>
+            <input
+              id="word-description-input"
+              type="text"
+              class="input word-description-input"
+              placeholder="用一句话描述你的关键词"
+              maxlength="200"
+              autocomplete="off"
+            >
+            <button id="btn-submit-word-description" type="submit" class="btn btn-primary btn-sm" disabled>提交描述</button>
+          </form>
         </section>
         <section id="vote-panel" class="vote-panel" hidden>
           <div class="vote-panel-header">
@@ -184,6 +201,6 @@
     window.DC_CONFIG = { apiBase: '/api/rooms' };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
-  <script src="app.js?v=20260529-word-undercover"></script>
+  <script src="app.js?v=20260529-word-descriptions"></script>
 </body>
 </html>

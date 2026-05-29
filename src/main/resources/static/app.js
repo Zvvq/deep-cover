@@ -23,6 +23,9 @@
     currentTopic: null,
     currentPlayerWord: null,
     wordLoading: false,
+    wordDescriptionSnapshot: null,
+    wordDescriptionLoading: false,
+    wordDescriptionSubmitting: false,
     voteSnapshot: null,
     voteCandidateIds: [],
     voteSubmitting: false,
@@ -53,6 +56,9 @@
     state.currentTopic = null;
     state.currentPlayerWord = null;
     state.wordLoading = false;
+    state.wordDescriptionSnapshot = null;
+    state.wordDescriptionLoading = false;
+    state.wordDescriptionSubmitting = false;
     state.voteSnapshot = null;
     state.voteCandidateIds = [];
     state.voteSubmitting = false;
@@ -102,6 +108,13 @@
   const wordColor = $('#word-color');
   const wordValue = $('#word-value');
   const wordHint = $('#word-hint');
+  const wordRound = $('#word-round');
+  const wordCurrentTurn = $('#word-current-turn');
+  const wordDescriptionList = $('#word-description-list');
+  const wordDescriptionWait = $('#word-description-wait');
+  const wordDescriptionForm = $('#word-description-form');
+  const wordDescriptionInput = $('#word-description-input');
+  const btnSubmitWordDescription = $('#btn-submit-word-description');
   const votePanel = $('#vote-panel');
   const voteProgress = $('#vote-progress');
   const voteStatus = $('#vote-status');
@@ -396,6 +409,16 @@
         playerToken: state.playerToken,
       });
     },
+
+    wordDescriptions() {
+      return API.request('GET', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/word/descriptions');
+    },
+
+    submitWordDescription(content) {
+      return API.request('POST', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/word/descriptions', {
+        content: content,
+      });
+    },
   };
 
   // ==================== VIEW SWITCHING ====================
@@ -561,6 +584,10 @@
       if (!button || button.disabled) return;
       handleVoteSubmit(button.dataset.targetPlayerId);
     });
+    wordDescriptionForm.addEventListener('submit', handleWordDescriptionSubmit);
+    wordDescriptionInput.addEventListener('input', function () {
+      btnSubmitWordDescription.disabled = state.wordDescriptionSubmitting || wordDescriptionInput.value.trim().length === 0;
+    });
   }
 
   function enterGame(snapshot) {
@@ -662,6 +689,7 @@
     chatMessages.innerHTML = '<p class="chat-placeholder">关键词卧底描述阶段，等待后续描述模块</p>';
     renderWordPanel(state.currentPlayerWord);
     loadPlayerWord();
+    loadWordDescriptions();
   }
 
   function enterEnded() {
@@ -712,6 +740,8 @@
       wordValue.textContent = state.wordLoading ? '正在加载' : '未获取';
       wordHint.textContent = state.wordLoading ? '正在查询你的关键词' : '等待后续描述模块';
     }
+
+    renderWordDescriptions(state.wordDescriptionSnapshot);
   }
 
   async function loadPlayerWord() {
@@ -732,6 +762,131 @@
       wordHint.textContent = err.message || '请稍后重试';
     } finally {
       state.wordLoading = false;
+    }
+  }
+
+  async function loadWordDescriptions() {
+    if (!isWordUndercover() || state.currentRoomStatus !== 'DESCRIBING' || state.wordDescriptionLoading) return;
+
+    state.wordDescriptionLoading = true;
+    renderWordDescriptions(state.wordDescriptionSnapshot);
+    try {
+      var data = await API.wordDescriptions();
+      state.wordDescriptionSnapshot = data;
+      renderWordDescriptions(data);
+    } catch (err) {
+      wordCurrentTurn.textContent = err.message || '描述状态加载失败';
+      wordDescriptionWait.textContent = '请稍后重试';
+      wordDescriptionWait.hidden = false;
+      wordDescriptionForm.hidden = true;
+    } finally {
+      state.wordDescriptionLoading = false;
+    }
+  }
+
+  function renderWordDescriptions(snapshot) {
+    if (!wordDescriptionList) return;
+
+    var descriptions = (snapshot && snapshot.descriptions) || [];
+    wordRound.textContent = snapshot ? ('第 ' + snapshot.roundNumber + ' 轮') : '第 -- 轮';
+
+    if (!snapshot) {
+      wordCurrentTurn.textContent = state.wordDescriptionLoading ? '正在加载描述顺序' : '等待描述状态';
+    } else if (snapshot.roundComplete) {
+      wordCurrentTurn.textContent = '本轮描述已完成，等待进入投票';
+    } else if (snapshot.currentPlayerId === state.playerId) {
+      wordCurrentTurn.textContent = '轮到你描述';
+    } else if (snapshot.currentNumber != null) {
+      wordCurrentTurn.textContent = '轮到玩家' + snapshot.currentNumber + '号描述';
+    } else {
+      wordCurrentTurn.textContent = '等待下一位玩家描述';
+    }
+
+    wordDescriptionList.innerHTML = '';
+    descriptions.forEach(function (description) {
+      wordDescriptionList.appendChild(createWordDescriptionItem(description));
+    });
+    if (descriptions.length === 0) {
+      var empty = document.createElement('p');
+      empty.className = 'word-description-empty';
+      empty.textContent = '本轮暂无描述';
+      wordDescriptionList.appendChild(empty);
+    }
+
+    var canSubmit = !!(snapshot && !snapshot.roundComplete && snapshot.currentPlayerId === state.playerId);
+    wordDescriptionForm.hidden = !canSubmit;
+    wordDescriptionWait.hidden = canSubmit;
+    wordDescriptionWait.textContent = snapshot && snapshot.roundComplete
+      ? '本轮描述已完成'
+      : (canSubmit ? '' : '等待当前玩家描述');
+    btnSubmitWordDescription.disabled = state.wordDescriptionSubmitting || wordDescriptionInput.value.trim().length === 0;
+  }
+
+  function createWordDescriptionItem(description) {
+    var item = document.createElement('div');
+    item.className = 'word-description-item';
+
+    var avatar = document.createElement('div');
+    avatar.className = 'chat-avatar';
+    avatar.style.backgroundColor = playerColorValue(description.color) || '#64748B';
+    avatar.textContent = description.number == null ? '?' : String(description.number);
+
+    var body = document.createElement('div');
+    body.className = 'word-description-body';
+
+    var meta = document.createElement('div');
+    meta.className = 'word-description-meta';
+
+    var player = document.createElement('span');
+    player.textContent = description.number == null ? '玩家' : ('玩家' + description.number + '号');
+
+    var type = document.createElement('span');
+    type.textContent = playerTypeLabel(description.playerType);
+
+    var time = document.createElement('span');
+    time.textContent = formatISOTime(description.createdAt);
+
+    var content = document.createElement('div');
+    content.className = 'word-description-content';
+    content.textContent = description.content || '';
+
+    meta.appendChild(player);
+    meta.appendChild(type);
+    meta.appendChild(time);
+    body.appendChild(meta);
+    body.appendChild(content);
+    item.appendChild(avatar);
+    item.appendChild(body);
+    return item;
+  }
+
+  async function handleWordDescriptionSubmit(event) {
+    event.preventDefault();
+    if (state.wordDescriptionSubmitting) return;
+
+    var content = wordDescriptionInput.value.trim();
+    if (!content) return;
+
+    state.wordDescriptionSubmitting = true;
+    btnSubmitWordDescription.disabled = true;
+    try {
+      var result = await API.submitWordDescription(content);
+      wordDescriptionInput.value = '';
+      if (result && result.snapshot) {
+        state.wordDescriptionSnapshot = result.snapshot;
+        renderWordDescriptions(result.snapshot);
+      } else if (result && result.description) {
+        handleWordDescriptionSubmitted(result.description);
+      }
+      if (result && result.votingStarted) {
+        refreshRoomState();
+      }
+    } catch (err) {
+      toast(err.message || '描述提交失败', true);
+      renderWordDescriptions(state.wordDescriptionSnapshot);
+    } finally {
+      state.wordDescriptionSubmitting = false;
+      renderWordDescriptions(state.wordDescriptionSnapshot);
     }
   }
 
@@ -1120,6 +1275,12 @@
       case 'ROUND_STARTED':
         handleRoundStarted(event.payload);
         break;
+      case 'WORD_DESCRIPTION_SUBMITTED':
+        handleWordDescriptionSubmitted(event.payload);
+        break;
+      case 'WORD_ROUND_STARTED':
+        handleWordRoundStarted(event.payload);
+        break;
       case 'GAME_ENDED':
         handleGameEnded(event.payload);
         break;
@@ -1174,6 +1335,56 @@
       currentPlayerVoted: state.voteSnapshot.currentPlayerVoted,
     };
     renderVotePanel();
+  }
+
+  function handleWordDescriptionSubmitted(payload) {
+    if (!payload || !isWordUndercover()) return;
+
+    var snapshot = state.wordDescriptionSnapshot || {
+      roomCode: state.roomCode,
+      roundNumber: 1,
+      currentPlayerId: null,
+      currentNumber: null,
+      roundComplete: false,
+      descriptions: [],
+    };
+
+    state.wordDescriptionSnapshot = Object.assign({}, snapshot, {
+      descriptions: mergeWordDescription(snapshot.descriptions || [], payload),
+    });
+    renderWordDescriptions(state.wordDescriptionSnapshot);
+    loadWordDescriptions();
+  }
+
+  function handleWordRoundStarted(payload) {
+    if (!payload) return;
+
+    state.currentGameMode = 'WORD_UNDERCOVER';
+    state.currentRoomStatus = 'DESCRIBING';
+    state.currentPlayerWord = null;
+    state.wordDescriptionSnapshot = {
+      roomCode: payload.roomCode || state.roomCode,
+      roundNumber: payload.roundNumber,
+      currentPlayerId: payload.currentPlayerId,
+      currentNumber: payload.currentNumber,
+      roundComplete: false,
+      descriptions: [],
+    };
+    showView(gameView);
+    enterWordDescribing();
+  }
+
+  function mergeWordDescription(descriptions, nextDescription) {
+    var key = wordDescriptionKey(nextDescription);
+    return descriptions
+      .filter(function (description) {
+        return wordDescriptionKey(description) !== key;
+      })
+      .concat([nextDescription]);
+  }
+
+  function wordDescriptionKey(description) {
+    return [description.playerId || '', description.createdAt || '', description.content || ''].join('|');
   }
 
   function handlePlayerEliminated(payload) {
