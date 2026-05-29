@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260528-chat-avatar">
+  <link rel="stylesheet" href="styles.css?v=20260529-word-undercover">
 </head>
 <body>
 
@@ -20,6 +20,17 @@
       </header>
 
       <div class="home-actions">
+        <div class="mode-selector" role="radiogroup" aria-label="选择玩法">
+          <label class="mode-option">
+            <input type="radio" name="game-mode" value="CHAT_UNDERCOVER" checked>
+            <span>聊天卧底</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="game-mode" value="WORD_UNDERCOVER">
+            <span>关键词卧底</span>
+          </label>
+        </div>
+
         <button id="btn-create" class="btn btn-primary btn-lg" disabled>
           <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           创建房间
@@ -113,6 +124,24 @@
           <span class="topic-label">当前话题</span>
           <p id="topic-content" class="topic-content"></p>
         </section>
+        <section id="word-panel" class="word-panel" hidden>
+          <div class="word-panel-header">
+            <div>
+              <h2 class="word-title">关键词卧底</h2>
+              <p id="word-phase-hint" class="word-phase-hint">描述阶段已开始</p>
+            </div>
+            <span id="word-status" class="word-status-pill">描述阶段</span>
+          </div>
+          <div id="my-word-card" class="my-word-card">
+            <div class="word-meta-row">
+              <span id="word-number" class="word-meta-pill">编号等待分配</span>
+              <span id="word-color" class="word-meta-pill">颜色等待分配</span>
+            </div>
+            <div class="word-value-label">你的关键词</div>
+            <div id="word-value" class="word-value">正在加载</div>
+          </div>
+          <p id="word-hint" class="word-hint">等待后续描述模块</p>
+        </section>
         <section id="vote-panel" class="vote-panel" hidden>
           <div class="vote-panel-header">
             <div>
@@ -155,6 +184,6 @@
     window.DC_CONFIG = { apiBase: '/api/rooms' };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
-  <script src="app.js?v=20260528-chat-avatar"></script>
+  <script src="app.js?v=20260529-word-undercover"></script>
 </body>
 </html>

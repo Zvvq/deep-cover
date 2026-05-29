@@ -18,8 +18,11 @@
     timerPhase: null,
     timerServerOffsetMs: 0,
     currentRoomStatus: null,
+    currentGameMode: 'CHAT_UNDERCOVER',
     currentPlayers: [],
     currentTopic: null,
+    currentPlayerWord: null,
+    wordLoading: false,
     voteSnapshot: null,
     voteCandidateIds: [],
     voteSubmitting: false,
@@ -45,8 +48,11 @@
     state.playerId = null;
     state.playerToken = null;
     state.currentRoomStatus = null;
+    state.currentGameMode = 'CHAT_UNDERCOVER';
     state.currentPlayers = [];
     state.currentTopic = null;
+    state.currentPlayerWord = null;
+    state.wordLoading = false;
     state.voteSnapshot = null;
     state.voteCandidateIds = [];
     state.voteSubmitting = false;
@@ -65,6 +71,7 @@
   // Home
   const btnCreate = $('#btn-create');
   const btnJoin = $('#btn-join');
+  const gameModeInputs = $$('input[name="game-mode"]');
   const roomCodeInput = $('#room-code-input');
   const joinForm = $('#join-form');
   const joinError = $('#join-error');
@@ -88,6 +95,13 @@
   const gamePhaseBadge = $('#game-phase-badge');
   const topicPanel = $('#topic-panel');
   const topicContent = $('#topic-content');
+  const wordPanel = $('#word-panel');
+  const wordPhaseHint = $('#word-phase-hint');
+  const wordStatus = $('#word-status');
+  const wordNumber = $('#word-number');
+  const wordColor = $('#word-color');
+  const wordValue = $('#word-value');
+  const wordHint = $('#word-hint');
   const votePanel = $('#vote-panel');
   const voteProgress = $('#vote-progress');
   const voteStatus = $('#vote-status');
@@ -112,6 +126,22 @@
     if (!iso) return '';
     const d = new Date(iso);
     return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function selectedGameMode() {
+    var selected = Array.from(gameModeInputs).find(function (input) {
+      return input.checked;
+    });
+    return selected ? selected.value : 'CHAT_UNDERCOVER';
+  }
+
+  function gameModeLabel(gameMode) {
+    if (gameMode === 'WORD_UNDERCOVER') return '关键词卧底';
+    return '聊天卧底';
+  }
+
+  function isWordUndercover() {
+    return state.currentGameMode === 'WORD_UNDERCOVER';
   }
 
   const playerColorPalette = {
@@ -144,6 +174,13 @@
     if (!color) return '等待分配';
     var entry = playerColorPalette[String(color).toUpperCase()];
     return entry ? entry.label : color;
+  }
+
+  function playerTypeLabel(type) {
+    if (!type) return '身份等待分配';
+    if (type === 'HUMAN') return '真人';
+    if (type === 'AI') return 'AI';
+    return type;
   }
 
   function playerLabel(player) {
@@ -219,6 +256,13 @@
     colorLabel.className = 'player-color-label';
     colorLabel.textContent = playerColorLabel(player && player.color);
     container.appendChild(colorLabel);
+  }
+
+  function appendPlayerTypeLabel(container, player) {
+    var typeLabel = document.createElement('span');
+    typeLabel.className = 'player-type-label';
+    typeLabel.textContent = playerTypeLabel(player && player.type);
+    container.appendChild(typeLabel);
   }
 
   // ==================== TOAST ====================
@@ -307,8 +351,10 @@
       return res.json();
     },
 
-    createRoom() {
-      return API.request('POST', '/api/rooms');
+    createRoom(gameMode) {
+      return API.request('POST', '/api/rooms', {
+        gameMode: gameMode || 'CHAT_UNDERCOVER',
+      });
     },
 
     joinRoom(roomCode) {
@@ -344,6 +390,12 @@
         targetPlayerId: targetPlayerId,
       });
     },
+
+    playerWord() {
+      return API.request('POST', '/api/rooms/' + encodeURIComponent(state.roomCode) + '/word/me', {
+        playerToken: state.playerToken,
+      });
+    },
   };
 
   // ==================== VIEW SWITCHING ====================
@@ -374,7 +426,7 @@
     homeStatus.textContent = '正在创建房间…';
 
     try {
-      var data = await API.createRoom();
+      var data = await API.createRoom(selectedGameMode());
       onRoomJoined(data);
     } catch (err) {
       homeStatus.textContent = '';
@@ -406,6 +458,8 @@
     state.roomCode = data.roomCode;
     state.playerId = data.playerId;
     state.playerToken = data.playerToken;
+    state.currentGameMode = (data.snapshot && data.snapshot.gameMode) || 'CHAT_UNDERCOVER';
+    state.currentPlayerWord = null;
     persist();
     homeStatus.hidden = true;
     homeStatus.textContent = '';
@@ -425,8 +479,9 @@
   }
 
   function renderWaiting(snapshot) {
+    state.currentGameMode = snapshot.gameMode || state.currentGameMode || 'CHAT_UNDERCOVER';
     waitingRoomCode.textContent = snapshot.roomCode;
-    waitingRoomStatus.textContent = snapshot.status === 'WAITING' ? '等待中' : snapshot.status;
+    waitingRoomStatus.textContent = (snapshot.status === 'WAITING' ? '等待中' : snapshot.status) + ' · ' + gameModeLabel(state.currentGameMode);
     waitingRoomStatus.classList.toggle('live', snapshot.status === 'WAITING');
 
     var players = snapshot.players || [];
@@ -522,12 +577,15 @@
 
     var previousStatus = state.currentRoomStatus;
     state.currentRoomStatus = snapshot.status;
+    state.currentGameMode = snapshot.gameMode || state.currentGameMode || 'CHAT_UNDERCOVER';
     state.roomCode = snapshot.roomCode || state.roomCode;
     gameRoomCode.textContent = snapshot.roomCode;
     renderGamePlayers(snapshot.players || []);
     updateTopicDisplay(snapshot.topic);
 
-    if (snapshot.status === 'VOTING') {
+    if (state.currentGameMode === 'WORD_UNDERCOVER' && snapshot.status === 'DESCRIBING') {
+      enterWordDescribing();
+    } else if (snapshot.status === 'VOTING') {
       if (previousStatus !== 'CHATTING') {
         chatMessages.innerHTML = '<p class="chat-placeholder">投票阶段，聊天已暂停</p>';
       }
@@ -547,7 +605,7 @@
         updateTopicDisplay(null);
         renderWaiting(snapshot);
         showView(waitingView);
-      } else if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING' || snapshot.status === 'ENDED') {
+      } else if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING' || snapshot.status === 'DESCRIBING' || snapshot.status === 'ENDED') {
         showView(gameView);
         applyGameSnapshot(snapshot);
       } else if (snapshot.status === 'DESTROYED') {
@@ -571,6 +629,7 @@
   }
 
   function enterChatting() {
+    hideWordPanel();
     hideVotePanel();
     state.voteSnapshot = null;
     state.voteCandidateIds = [];
@@ -581,6 +640,7 @@
   }
 
   function enterVoting() {
+    hideWordPanel();
     gamePhaseBadge.textContent = '投票阶段';
     gamePhaseBadge.className = 'phase-badge';
     setChatInputState(false, '投票阶段暂停发言');
@@ -590,7 +650,22 @@
     loadTimer();
   }
 
+  function enterWordDescribing() {
+    hideVotePanel();
+    updateTopicDisplay(null);
+    stopTimerInterval();
+    timerValue.textContent = '--:--';
+    timerDisplay.classList.remove('warning', 'danger');
+    gamePhaseBadge.textContent = '描述阶段';
+    gamePhaseBadge.className = 'phase-badge';
+    setChatInputState(false, '关键词卧底描述阶段暂未开放发言');
+    chatMessages.innerHTML = '<p class="chat-placeholder">关键词卧底描述阶段，等待后续描述模块</p>';
+    renderWordPanel(state.currentPlayerWord);
+    loadPlayerWord();
+  }
+
   function enterEnded() {
+    hideWordPanel();
     hideVotePanel();
     stopTimerInterval();
     timerValue.textContent = '--:--';
@@ -604,6 +679,60 @@
     votePanel.hidden = true;
     voteCandidates.innerHTML = '';
     voteHint.textContent = '';
+  }
+
+  function hideWordPanel() {
+    if (!wordPanel) return;
+    wordPanel.hidden = true;
+  }
+
+  function renderWordPanel(wordData) {
+    if (!wordPanel) return;
+
+    wordPanel.hidden = false;
+    wordStatus.textContent = '描述阶段';
+    wordPhaseHint.textContent = '只显示你的关键词，其他玩家关键词不会展示';
+
+    var player = currentPlayer();
+    var numberSource = wordData || player;
+    var colorSource = wordData || player;
+
+    wordNumber.textContent = numberSource && numberSource.number != null
+      ? ('玩家' + playerAvatarNumber(numberSource) + '号')
+      : '编号等待分配';
+    wordColor.textContent = colorSource && colorSource.color
+      ? playerColorLabel(colorSource.color)
+      : '颜色等待分配';
+    wordColor.style.color = playerColorValue(colorSource && colorSource.color) || '';
+
+    if (wordData && wordData.word) {
+      wordValue.textContent = wordData.word;
+      wordHint.textContent = '等待后续描述模块';
+    } else {
+      wordValue.textContent = state.wordLoading ? '正在加载' : '未获取';
+      wordHint.textContent = state.wordLoading ? '正在查询你的关键词' : '等待后续描述模块';
+    }
+  }
+
+  async function loadPlayerWord() {
+    if (!isWordUndercover() || state.currentRoomStatus !== 'DESCRIBING' || state.wordLoading) return;
+    if (state.currentPlayerWord && state.currentPlayerWord.playerId === state.playerId) {
+      renderWordPanel(state.currentPlayerWord);
+      return;
+    }
+
+    state.wordLoading = true;
+    renderWordPanel(state.currentPlayerWord);
+    try {
+      var data = await API.playerWord();
+      state.currentPlayerWord = data;
+      renderWordPanel(data);
+    } catch (err) {
+      wordValue.textContent = '加载失败';
+      wordHint.textContent = err.message || '请稍后重试';
+    } finally {
+      state.wordLoading = false;
+    }
   }
 
   function renderGamePlayers(players) {
@@ -629,6 +758,7 @@
       li.appendChild(dot);
       li.appendChild(name);
       appendPlayerColorLabel(li, p);
+      if (isWordUndercover()) appendPlayerTypeLabel(li, p);
       li.appendChild(status);
 
       gamePlayerList.appendChild(li);
@@ -1092,7 +1222,7 @@
         if (snapshot.status !== 'WAITING') {
           // Game started or room ended
           stopWaitingPoll();
-          if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING') {
+          if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING' || snapshot.status === 'DESCRIBING') {
             enterGame(snapshot);
           } else if (snapshot.status === 'ENDED' || snapshot.status === 'DESTROYED') {
             toast('房间已结束', false);
@@ -1139,7 +1269,7 @@
           renderWaiting(snapshot);
           showView(waitingView);
           startWaitingPoll();
-        } else if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING') {
+        } else if (snapshot.status === 'CHATTING' || snapshot.status === 'VOTING' || snapshot.status === 'DESCRIBING') {
           showView(gameView);
           enterGame(snapshot);
         } else {
