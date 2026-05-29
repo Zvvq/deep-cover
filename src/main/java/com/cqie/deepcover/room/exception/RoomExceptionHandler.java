@@ -22,8 +22,9 @@ public class RoomExceptionHandler {
         HttpStatus status = switch (exception.getErrorCode()) {
             case ROOM_NOT_FOUND, TIMER_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case FORBIDDEN -> HttpStatus.FORBIDDEN;
-            case ROOM_NOT_JOINABLE, ROOM_NOT_CHATTING, ROOM_NOT_VOTING, ROOM_FULL, NOT_ENOUGH_PLAYERS,
-                 PLAYER_NOT_FOUND, PLAYER_NOT_ALIVE, INVALID_CHAT_MESSAGE, INVALID_VOTE,
+            case ROOM_NOT_JOINABLE, ROOM_NOT_CHATTING, ROOM_NOT_DESCRIBING, ROOM_NOT_VOTING,
+                 ROOM_MODE_NOT_SUPPORTED, ROOM_FULL, NOT_ENOUGH_PLAYERS,
+                 PLAYER_NOT_FOUND, PLAYER_NOT_ALIVE, INVALID_CHAT_MESSAGE, WORD_NOT_ASSIGNED, INVALID_VOTE,
                  DUPLICATE_VOTE -> HttpStatus.BAD_REQUEST;
         };
 
