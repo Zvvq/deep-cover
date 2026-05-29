@@ -1,6 +1,6 @@
 package com.cqie.deepcover.room.record;
 
-import org.springframework.stereotype.Component;
+import com.cqie.deepcover.room.enums.GameMode;
 
 /**
  * room REST 接口使用的响应 DTO。
@@ -11,6 +11,9 @@ import org.springframework.stereotype.Component;
 
 public final class RoomDtos {
     private RoomDtos() {
+    }
+
+    public record CreateRoomRequest(GameMode gameMode) {
     }
 
     public record CreateRoomResponse(
