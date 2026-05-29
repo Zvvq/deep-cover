@@ -1,5 +1,6 @@
 package com.cqie.deepcover.room.model;
 
+import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.PlayerType;
 import com.cqie.deepcover.room.enums.RoomStatus;
 import com.cqie.deepcover.room.record.Player;
@@ -35,20 +36,26 @@ public class Room {
 
     private final String roomCode;
     private final String hostPlayerId;
+    private final GameMode gameMode;
     private final List<Player> players;
     private RoomStatus status;
     private TopicSnapshot topic;
 
-    private Room(String roomCode, Player host) {
+    private Room(String roomCode, Player host, GameMode gameMode) {
         this.roomCode = roomCode;
         this.hostPlayerId = host.id();
+        this.gameMode = gameMode == null ? GameMode.CHAT_UNDERCOVER : gameMode;
         this.players = new ArrayList<>();
         this.players.add(host);
         this.status = RoomStatus.WAITING;
     }
 
     public static Room createWaiting(String roomCode, Player host) {
-        return new Room(roomCode, host);
+        return createWaiting(roomCode, host, GameMode.CHAT_UNDERCOVER);
+    }
+
+    public static Room createWaiting(String roomCode, Player host, GameMode gameMode) {
+        return new Room(roomCode, host, gameMode);
     }
 
     public String roomCode() {
@@ -61,6 +68,10 @@ public class Room {
 
     public RoomStatus status() {
         return status;
+    }
+
+    public GameMode gameMode() {
+        return gameMode;
     }
 
     public List<Player> players() {
@@ -99,6 +110,10 @@ public class Room {
 
     public void markChatting() {
         status = RoomStatus.CHATTING;
+    }
+
+    public void markDescribing() {
+        status = RoomStatus.DESCRIBING;
     }
 
     public void markVoting() {
