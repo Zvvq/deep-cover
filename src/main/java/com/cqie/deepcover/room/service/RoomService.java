@@ -267,6 +267,14 @@ public class RoomService {
         return snapshot(room);
     }
 
+    public synchronized RoomSnapshot markDescribing(String roomCode) {
+        Room room = findRoom(roomCode);
+        room.markDescribing();
+        roomRepository.save(room);
+        log.info("房间进入关键词描述阶段，roomCode={}", roomCode);
+        return snapshot(room);
+    }
+
     public synchronized RoomSnapshot markChattingWithNewTopic(String roomCode) {
         Room room = findRoom(roomCode);
         assignNewTopic(room);
