@@ -5,6 +5,7 @@ import com.cqie.deepcover.chat.interfaces.ChatEventPublisher;
 import com.cqie.deepcover.chat.record.RoomEvent;
 import com.cqie.deepcover.game.enums.GamePhase;
 import com.cqie.deepcover.game.service.GameTimerService;
+import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.PlayerType;
 import com.cqie.deepcover.room.enums.RoomErrorCode;
 import com.cqie.deepcover.room.enums.RoomStatus;
@@ -29,6 +30,10 @@ import com.cqie.deepcover.vote.record.VoteSnapshot;
 import com.cqie.deepcover.vote.record.VoteUpdatedPayload;
 import com.cqie.deepcover.vote.record.VotingStartedEvent;
 import com.cqie.deepcover.vote.record.VotingStartedPayload;
+import com.cqie.deepcover.word.interfaces.impl.InMemoryWordAssignmentRepository;
+import com.cqie.deepcover.word.interfaces.impl.InMemoryWordPairRepository;
+import com.cqie.deepcover.word.record.WordRoundStartedPayload;
+import com.cqie.deepcover.word.service.WordGameService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,6 +69,7 @@ public class VoteService {
     private final GameTimerService gameTimerService;
     private final Clock clock;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final WordGameService wordGameService;
     private final Random random = new SecureRandom();
 
     public VoteService(
@@ -74,7 +80,31 @@ public class VoteService {
             Clock clock
     ) {
         this(roomService, voteRepository, chatEventPublisher, gameTimerService, clock, event -> {
-        });
+        }, defaultWordGameService());
+    }
+
+    public VoteService(
+            RoomService roomService,
+            VoteRepository voteRepository,
+            ChatEventPublisher chatEventPublisher,
+            GameTimerService gameTimerService,
+            Clock clock,
+            WordGameService wordGameService
+    ) {
+        this(roomService, voteRepository, chatEventPublisher, gameTimerService, clock, event -> {
+        }, wordGameService);
+    }
+
+    public VoteService(
+            RoomService roomService,
+            VoteRepository voteRepository,
+            ChatEventPublisher chatEventPublisher,
+            GameTimerService gameTimerService,
+            Clock clock,
+            ApplicationEventPublisher applicationEventPublisher
+    ) {
+        this(roomService, voteRepository, chatEventPublisher, gameTimerService, clock, applicationEventPublisher,
+                defaultWordGameService());
     }
 
     @Autowired
@@ -84,7 +114,8 @@ public class VoteService {
             ChatEventPublisher chatEventPublisher,
             GameTimerService gameTimerService,
             Clock clock,
-            ApplicationEventPublisher applicationEventPublisher
+            ApplicationEventPublisher applicationEventPublisher,
+            WordGameService wordGameService
     ) {
         this.roomService = roomService;
         this.voteRepository = voteRepository;
@@ -92,6 +123,7 @@ public class VoteService {
         this.gameTimerService = gameTimerService;
         this.clock = clock;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.wordGameService = wordGameService;
     }
 
     /**
@@ -103,7 +135,7 @@ public class VoteService {
             log.info("房间已处于投票阶段，直接返回当前投票状态，roomCode={}", roomCode);
             return systemSnapshot(roomCode);
         }
-        if (room.status() != RoomStatus.CHATTING) {
+        if (!canStartVoting(room)) {
             throw new RoomException(RoomErrorCode.ROOM_NOT_CHATTING, "Room is not chatting.");
         }
 
@@ -186,6 +218,25 @@ public class VoteService {
         if (winner != null) {
             roomService.markEnded(roomCode);
             publishGameEnded(roomCode, winner, eliminatedPlayer);
+        } else if (afterElimination.gameMode() == GameMode.WORD_UNDERCOVER) {
+            int nextRoundNumber = session.roundNumber() + 1;
+            RoomSnapshot nextRoundRoom = roomService.markDescribing(roomCode);
+            wordGameService.assignWords(nextRoundRoom, nextRoundNumber);
+            PlayerSnapshot currentPlayer = firstAlivePlayerByNumber(nextRoundRoom);
+            chatEventPublisher.publish(
+                    roomCode,
+                    new RoomEvent(RoomEventType.WORD_ROUND_STARTED, new WordRoundStartedPayload(
+                            roomCode,
+                            nextRoundNumber,
+                            currentPlayer == null ? null : currentPlayer.id(),
+                            currentPlayer == null ? null : currentPlayer.number()
+                    ))
+            );
+            log.info("进入下一轮关键词描述，roomCode={}, nextRoundNumber={}, currentPlayerId={}, currentNumber={}",
+                    roomCode,
+                    nextRoundNumber,
+                    currentPlayer == null ? null : currentPlayer.id(),
+                    currentPlayer == null ? null : currentPlayer.number());
         } else {
             RoomSnapshot nextRoundRoom = roomService.markChattingWithNewTopic(roomCode);
             gameTimerService.startTimer(roomCode, GamePhase.CHATTING, CHATTING_DURATION);
@@ -239,6 +290,11 @@ public class VoteService {
             return settleVoting(roomCode);
         }
         return VoteResult.notSettled(roomCode, session.roundNumber());
+    }
+
+    private boolean canStartVoting(RoomSnapshot room) {
+        return room.status() == RoomStatus.CHATTING
+                || (room.gameMode() == GameMode.WORD_UNDERCOVER && room.status() == RoomStatus.DESCRIBING);
     }
 
     private void validateVoteTarget(RoomSnapshot room, String voterPlayerId, String targetPlayerId) {
@@ -331,6 +387,12 @@ public class VoteService {
         return candidates.get(random.nextInt(candidates.size()));
     }
 
+    private PlayerSnapshot firstAlivePlayerByNumber(RoomSnapshot room) {
+        return alivePlayers(room).stream()
+                .min(Comparator.comparing(PlayerSnapshot::number))
+                .orElse(null);
+    }
+
     private GameWinner determineWinner(PlayerSnapshot eliminatedPlayer, RoomSnapshot afterElimination) {
         if (eliminatedPlayer.type() == PlayerType.AI) {
             return GameWinner.HUMAN;
@@ -391,5 +453,9 @@ public class VoteService {
         );
         applicationEventPublisher.publishEvent(new GameEndedEvent(roomCode, winner, reason));
         log.info("游戏结束，roomCode={}, winner={}, reason={}", roomCode, winner, reason);
+    }
+
+    private static WordGameService defaultWordGameService() {
+        return new WordGameService(new InMemoryWordPairRepository(), new InMemoryWordAssignmentRepository());
     }
 }
