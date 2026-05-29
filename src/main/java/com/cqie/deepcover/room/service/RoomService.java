@@ -1,5 +1,6 @@
 package com.cqie.deepcover.room.service;
 
+import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.PlayerType;
 import com.cqie.deepcover.room.enums.RoomErrorCode;
 import com.cqie.deepcover.room.enums.RoomStatus;
@@ -16,6 +17,9 @@ import com.cqie.deepcover.room.record.RoomSnapshot;
 import com.cqie.deepcover.topic.interfaces.impl.InMemoryTopicRepository;
 import com.cqie.deepcover.topic.record.TopicSnapshot;
 import com.cqie.deepcover.topic.service.TopicService;
+import com.cqie.deepcover.word.interfaces.impl.InMemoryWordAssignmentRepository;
+import com.cqie.deepcover.word.interfaces.impl.InMemoryWordPairRepository;
+import com.cqie.deepcover.word.service.WordGameService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,37 +47,56 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final TopicService topicService;
+    private final WordGameService wordGameService;
     private final Random random = new SecureRandom();
 
     public RoomService(RoomRepository roomRepository) {
         this(roomRepository, event -> {
-        }, defaultTopicService());
+        }, defaultTopicService(), defaultWordGameService());
     }
 
     public RoomService(RoomRepository roomRepository, ApplicationEventPublisher eventPublisher) {
-        this(roomRepository, eventPublisher, defaultTopicService());
+        this(roomRepository, eventPublisher, defaultTopicService(), defaultWordGameService());
+    }
+
+    public RoomService(
+            RoomRepository roomRepository,
+            ApplicationEventPublisher eventPublisher,
+            TopicService topicService
+    ) {
+        this(roomRepository, eventPublisher, topicService, defaultWordGameService());
     }
 
     @Autowired
     public RoomService(
             RoomRepository roomRepository,
             ApplicationEventPublisher eventPublisher,
-            TopicService topicService
+            TopicService topicService,
+            WordGameService wordGameService
     ) {
         this.roomRepository = roomRepository;
         this.eventPublisher = eventPublisher;
         this.topicService = topicService;
+        this.wordGameService = wordGameService;
     }
 
     /**
      * 创建房间时自动生成房主玩家，并返回房间快照和房主 token。
      */
     public synchronized RoomCreateResult createRoom() {
+        return createRoom(GameMode.CHAT_UNDERCOVER);
+    }
+
+    /**
+     * 按指定玩法创建房间。gameMode 为空时仍走默认聊天卧底模式，兼容旧前端。
+     */
+    public synchronized RoomCreateResult createRoom(GameMode gameMode) {
+        GameMode resolvedMode = gameMode == null ? GameMode.CHAT_UNDERCOVER : gameMode;
         String roomCode = roomRepository.nextRoomCode();
         Player host = Player.humanHost(nextId(), nextToken());
-        Room room = Room.createWaiting(roomCode, host);
+        Room room = Room.createWaiting(roomCode, host, resolvedMode);
         roomRepository.save(room);
-        log.info("房间创建成功，roomCode={}, hostPlayerId={}", roomCode, host.id());
+        log.info("房间创建成功，roomCode={}, gameMode={}, hostPlayerId={}", roomCode, resolvedMode, host.id());
         return new RoomCreateResult(roomCode, host.id(), host.token(), snapshot(room));
     }
 
@@ -102,7 +125,7 @@ public class RoomService {
     }
 
     /**
-     * 房主开始游戏：补齐默认 AI 玩家，进入聊天阶段，并发布房间开始事件。
+     * 房主开始游戏：补齐默认 AI 玩家，然后按玩法进入聊天阶段或描述阶段。
      */
     public synchronized RoomSnapshot startRoom(String roomCode, String playerToken) {
         Room room = findRoom(roomCode);
@@ -115,6 +138,16 @@ public class RoomService {
         }
         addMissingAiUndercoverPlayers(room);
         room.assignPlayerIdentities(random);
+        if (room.gameMode() == GameMode.WORD_UNDERCOVER) {
+            room.markDescribing();
+            RoomSnapshot startedSnapshot = snapshot(room);
+            wordGameService.assignInitialWords(startedSnapshot);
+            roomRepository.save(room);
+            log.info("关键词卧底开局，roomCode={}, hostPlayerId={}, humanPlayerCount={}, aiPlayerCount={}, status={}",
+                    roomCode, requester.id(), room.humanPlayerCount(), room.aiPlayerCount(), room.status());
+            return startedSnapshot;
+        }
+
         assignNewTopic(room);
         room.markChatting();
         roomRepository.save(room);
@@ -197,6 +230,23 @@ public class RoomService {
         }
         Player player = findPlayerById(room, playerId);
         requireAi(player);
+        requireAlive(player);
+        return player;
+    }
+
+    /**
+     * 关键词卧底模式查询自己关键词时使用的真人玩家校验入口。
+     */
+    public synchronized Player requireWordParticipant(String roomCode, String playerToken) {
+        Room room = findRoom(roomCode);
+        if (room.gameMode() != GameMode.WORD_UNDERCOVER) {
+            throw new RoomException(RoomErrorCode.ROOM_MODE_NOT_SUPPORTED, "Room is not word undercover mode.");
+        }
+        if (room.status() != RoomStatus.DESCRIBING && room.status() != RoomStatus.VOTING) {
+            throw new RoomException(RoomErrorCode.ROOM_NOT_DESCRIBING, "Room is not in word round.");
+        }
+
+        Player player = findPlayer(room, playerToken);
         requireAlive(player);
         return player;
     }
@@ -296,6 +346,7 @@ public class RoomService {
         return new RoomSnapshot(
                 room.roomCode(),
                 room.status(),
+                room.gameMode(),
                 room.hostPlayerId(),
                 room.players().stream()
                         .map(PlayerSnapshot::from)
@@ -311,6 +362,10 @@ public class RoomService {
 
     private static TopicService defaultTopicService() {
         return new TopicService(new InMemoryTopicRepository());
+    }
+
+    private static WordGameService defaultWordGameService() {
+        return new WordGameService(new InMemoryWordPairRepository(), new InMemoryWordAssignmentRepository());
     }
 
     private String nextId() {
