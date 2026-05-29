@@ -8,6 +8,7 @@ package com.cqie.deepcover.room.enums;
  */
 public enum RoomStatus {
     WAITING,
+    DESCRIBING,
     CHATTING,
     VOTING,
     ENDED,
