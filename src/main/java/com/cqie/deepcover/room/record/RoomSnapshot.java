@@ -1,5 +1,6 @@
 package com.cqie.deepcover.room.record;
 
+import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.RoomStatus;
 import com.cqie.deepcover.topic.record.TopicSnapshot;
 
@@ -14,6 +15,7 @@ import java.util.List;
 public record RoomSnapshot(
         String roomCode,
         RoomStatus status,
+        GameMode gameMode,
         String hostPlayerId,
         List<PlayerSnapshot> players,
         TopicSnapshot topic
@@ -27,8 +29,18 @@ public record RoomSnapshot(
             String roomCode,
             RoomStatus status,
             String hostPlayerId,
+            List<PlayerSnapshot> players,
+            TopicSnapshot topic
+    ) {
+        this(roomCode, status, GameMode.CHAT_UNDERCOVER, hostPlayerId, players, topic);
+    }
+
+    public RoomSnapshot(
+            String roomCode,
+            RoomStatus status,
+            String hostPlayerId,
             List<PlayerSnapshot> players
     ) {
-        this(roomCode, status, hostPlayerId, players, null);
+        this(roomCode, status, GameMode.CHAT_UNDERCOVER, hostPlayerId, players, null);
     }
 }
