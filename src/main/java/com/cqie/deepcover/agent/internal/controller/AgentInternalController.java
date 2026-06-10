@@ -5,10 +5,14 @@ import com.cqie.deepcover.agent.internal.record.AgentRecentMessagesResponse;
 import com.cqie.deepcover.agent.internal.record.AgentRoomStateResponse;
 import com.cqie.deepcover.agent.internal.record.AgentVoteCommand;
 import com.cqie.deepcover.agent.internal.record.AgentVoteStateResponse;
+import com.cqie.deepcover.agent.internal.record.AgentWordDescriptionCommand;
 import com.cqie.deepcover.agent.internal.service.AgentInternalAuthService;
 import com.cqie.deepcover.agent.internal.service.AgentInternalService;
 import com.cqie.deepcover.chat.record.ChatMessageResponse;
 import com.cqie.deepcover.vote.record.VoteResult;
+import com.cqie.deepcover.word.record.PlayerWordResponse;
+import com.cqie.deepcover.word.record.WordDescriptionResult;
+import com.cqie.deepcover.word.record.WordDescriptionSnapshot;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -63,6 +67,25 @@ public class AgentInternalController {
         return agentInternalService.voteState(roomCode);
     }
 
+    @GetMapping("/api/internal/agent/rooms/{roomCode}/word")
+    public PlayerWordResponse aiWord(
+            @PathVariable String roomCode,
+            @RequestParam String aiPlayerId,
+            @RequestHeader(value = INTERNAL_SECRET_HEADER, required = false) String internalSecret
+    ) {
+        authService.requireAuthorized(internalSecret);
+        return agentInternalService.aiWord(roomCode, aiPlayerId);
+    }
+
+    @GetMapping("/api/internal/agent/rooms/{roomCode}/word/descriptions")
+    public WordDescriptionSnapshot wordDescriptions(
+            @PathVariable String roomCode,
+            @RequestHeader(value = INTERNAL_SECRET_HEADER, required = false) String internalSecret
+    ) {
+        authService.requireAuthorized(internalSecret);
+        return agentInternalService.wordDescriptions(roomCode);
+    }
+
     @PostMapping("/api/internal/agent/rooms/{roomCode}/messages")
     public ChatMessageResponse sendMessage(
             @PathVariable String roomCode,
@@ -81,5 +104,15 @@ public class AgentInternalController {
     ) {
         authService.requireAuthorized(internalSecret);
         return agentInternalService.castVote(roomCode, command);
+    }
+
+    @PostMapping("/api/internal/agent/rooms/{roomCode}/word/descriptions")
+    public WordDescriptionResult submitWordDescription(
+            @PathVariable String roomCode,
+            @RequestHeader(value = INTERNAL_SECRET_HEADER, required = false) String internalSecret,
+            @RequestBody AgentWordDescriptionCommand command
+    ) {
+        authService.requireAuthorized(internalSecret);
+        return agentInternalService.submitWordDescription(roomCode, command);
     }
 }
