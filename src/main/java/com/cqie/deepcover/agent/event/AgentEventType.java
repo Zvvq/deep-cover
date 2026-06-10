@@ -6,6 +6,8 @@ package com.cqie.deepcover.agent.event;
 public enum AgentEventType {
     ROOM_STARTED,
     CHAT_MESSAGE,
+    WORD_ROUND_STARTED,
+    WORD_DESCRIPTION_SUBMITTED,
     VOTING_STARTED,
     PLAYER_ELIMINATED,
     ROUND_STARTED,
