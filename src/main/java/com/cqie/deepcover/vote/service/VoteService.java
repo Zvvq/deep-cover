@@ -32,6 +32,7 @@ import com.cqie.deepcover.vote.record.VotingStartedEvent;
 import com.cqie.deepcover.vote.record.VotingStartedPayload;
 import com.cqie.deepcover.word.interfaces.impl.InMemoryWordAssignmentRepository;
 import com.cqie.deepcover.word.interfaces.impl.InMemoryWordPairRepository;
+import com.cqie.deepcover.word.record.WordRoundStartedEvent;
 import com.cqie.deepcover.word.record.WordRoundStartedPayload;
 import com.cqie.deepcover.word.service.WordGameService;
 import org.slf4j.Logger;
@@ -232,6 +233,12 @@ public class VoteService {
                             currentPlayer == null ? null : currentPlayer.number()
                     ))
             );
+            applicationEventPublisher.publishEvent(new WordRoundStartedEvent(
+                    roomCode,
+                    nextRoundNumber,
+                    currentPlayer == null ? null : currentPlayer.id(),
+                    currentPlayer == null ? null : currentPlayer.number()
+            ));
             log.info("进入下一轮关键词描述，roomCode={}, nextRoundNumber={}, currentPlayerId={}, currentNumber={}",
                     roomCode,
                     nextRoundNumber,
