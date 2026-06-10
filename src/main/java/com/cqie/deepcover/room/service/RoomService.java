@@ -19,6 +19,7 @@ import com.cqie.deepcover.topic.record.TopicSnapshot;
 import com.cqie.deepcover.topic.service.TopicService;
 import com.cqie.deepcover.word.interfaces.impl.InMemoryWordAssignmentRepository;
 import com.cqie.deepcover.word.interfaces.impl.InMemoryWordPairRepository;
+import com.cqie.deepcover.word.record.WordRoundStartedEvent;
 import com.cqie.deepcover.word.service.WordGameService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -143,6 +144,13 @@ public class RoomService {
             RoomSnapshot startedSnapshot = snapshot(room);
             wordGameService.assignInitialWords(startedSnapshot);
             roomRepository.save(room);
+            PlayerSnapshot currentPlayer = firstAlivePlayerByNumber(startedSnapshot);
+            eventPublisher.publishEvent(new WordRoundStartedEvent(
+                    roomCode,
+                    1,
+                    currentPlayer == null ? null : currentPlayer.id(),
+                    currentPlayer == null ? null : currentPlayer.number()
+            ));
             log.info("关键词卧底开局，roomCode={}, hostPlayerId={}, humanPlayerCount={}, aiPlayerCount={}, status={}",
                     roomCode, requester.id(), room.humanPlayerCount(), room.aiPlayerCount(), room.status());
             return startedSnapshot;
@@ -227,6 +235,23 @@ public class RoomService {
         Room room = findRoom(roomCode);
         if (room.status() != RoomStatus.VOTING) {
             throw new RoomException(RoomErrorCode.ROOM_NOT_VOTING, "Room is not voting.");
+        }
+        Player player = findPlayerById(room, playerId);
+        requireAi(player);
+        requireAlive(player);
+        return player;
+    }
+
+    /**
+     * AI 在关键词卧底模式查询词语或提交描述时使用的内部校验入口。
+     */
+    public synchronized Player requireAliveAiWordParticipant(String roomCode, String playerId) {
+        Room room = findRoom(roomCode);
+        if (room.gameMode() != GameMode.WORD_UNDERCOVER) {
+            throw new RoomException(RoomErrorCode.ROOM_MODE_NOT_SUPPORTED, "Room is not word undercover mode.");
+        }
+        if (room.status() != RoomStatus.DESCRIBING && room.status() != RoomStatus.VOTING) {
+            throw new RoomException(RoomErrorCode.ROOM_NOT_DESCRIBING, "Room is not in word round.");
         }
         Player player = findPlayerById(room, playerId);
         requireAi(player);
@@ -366,6 +391,13 @@ public class RoomService {
     private void assignNewTopic(Room room) {
         TopicSnapshot topic = topicService.randomTopic();
         room.assignTopic(topic);
+    }
+
+    private PlayerSnapshot firstAlivePlayerByNumber(RoomSnapshot room) {
+        return room.players().stream()
+                .filter(PlayerSnapshot::alive)
+                .min(java.util.Comparator.comparing(PlayerSnapshot::number))
+                .orElse(null);
     }
 
     private static TopicService defaultTopicService() {
