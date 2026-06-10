@@ -18,6 +18,9 @@ import com.cqie.deepcover.word.record.WordDescriptionEntry;
 import com.cqie.deepcover.word.record.WordDescriptionRequest;
 import com.cqie.deepcover.word.record.WordDescriptionResult;
 import com.cqie.deepcover.word.record.WordDescriptionSnapshot;
+import com.cqie.deepcover.word.record.WordDescriptionSubmittedEvent;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -41,6 +44,7 @@ public class WordDescriptionService {
     private final VoteService voteService;
     private final ChatEventPublisher chatEventPublisher;
     private final Clock clock;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     public WordDescriptionService(
             RoomService roomService,
@@ -50,12 +54,28 @@ public class WordDescriptionService {
             ChatEventPublisher chatEventPublisher,
             Clock clock
     ) {
+        this(roomService, wordGameService, wordDescriptionRepository, voteService, chatEventPublisher, clock,
+                event -> {
+                });
+    }
+
+    @Autowired
+    public WordDescriptionService(
+            RoomService roomService,
+            WordGameService wordGameService,
+            WordDescriptionRepository wordDescriptionRepository,
+            VoteService voteService,
+            ChatEventPublisher chatEventPublisher,
+            Clock clock,
+            ApplicationEventPublisher applicationEventPublisher
+    ) {
         this.roomService = roomService;
         this.wordGameService = wordGameService;
         this.wordDescriptionRepository = wordDescriptionRepository;
         this.voteService = voteService;
         this.chatEventPublisher = chatEventPublisher;
         this.clock = clock;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     /**
@@ -83,6 +103,13 @@ public class WordDescriptionService {
     public synchronized WordDescriptionSnapshot snapshot(String roomCode, String playerToken) {
         roomService.requireWordParticipant(roomCode, playerToken);
         return snapshot(roomService.snapshot(roomCode));
+    }
+
+    /**
+     * Agent 内部接口查询描述状态时使用，不需要真人 token。
+     */
+    public synchronized WordDescriptionSnapshot systemSnapshot(String roomCode) {
+        return snapshot(requireDescribingWordRoom(roomCode));
     }
 
     private WordDescriptionResult submitDescriptionByPlayerId(String roomCode, String playerId, String content) {
@@ -114,6 +141,7 @@ public class WordDescriptionService {
         WordDescriptionSnapshot afterSubmit = snapshot(room);
         WordDescriptionEntry entry = WordDescriptionEntry.from(description);
         chatEventPublisher.publish(roomCode, new RoomEvent(RoomEventType.WORD_DESCRIPTION_SUBMITTED, entry));
+        applicationEventPublisher.publishEvent(new WordDescriptionSubmittedEvent(roomCode, roundNumber, entry));
 
         boolean votingStarted = false;
         if (afterSubmit.roundComplete()) {
