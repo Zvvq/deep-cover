@@ -7,6 +7,8 @@ import com.cqie.deepcover.room.enums.PlayerType;
  */
 public record AgentPlayerView(
         String playerId,
+        Integer number,
+        String color,
         PlayerType type,
         boolean alive,
         boolean host

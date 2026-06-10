@@ -1,5 +1,6 @@
 package com.cqie.deepcover.agent.internal.record;
 
+import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.RoomStatus;
 import com.cqie.deepcover.topic.record.TopicSnapshot;
 
@@ -11,6 +12,7 @@ import java.util.List;
 public record AgentRoomStateResponse(
         String roomCode,
         RoomStatus status,
+        GameMode gameMode,
         TopicSnapshot topic,
         int roundNumber,
         long aliveHumanCount,
