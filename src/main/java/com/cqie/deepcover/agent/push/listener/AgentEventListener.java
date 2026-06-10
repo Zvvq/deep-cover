@@ -8,6 +8,8 @@ import com.cqie.deepcover.agent.event.AgentRoomDestroyedPayload;
 import com.cqie.deepcover.agent.event.AgentRoomStartedPayload;
 import com.cqie.deepcover.agent.event.AgentRoundStartedPayload;
 import com.cqie.deepcover.agent.event.AgentVotingStartedPayload;
+import com.cqie.deepcover.agent.event.AgentWordDescriptionSubmittedPayload;
+import com.cqie.deepcover.agent.event.AgentWordRoundStartedPayload;
 import com.cqie.deepcover.agent.push.service.AgentEventPushService;
 import com.cqie.deepcover.chat.record.ChatMessageCreatedEvent;
 import com.cqie.deepcover.room.enums.PlayerType;
@@ -20,6 +22,8 @@ import com.cqie.deepcover.vote.record.GameEndedEvent;
 import com.cqie.deepcover.vote.record.PlayerEliminatedEvent;
 import com.cqie.deepcover.vote.record.RoundStartedEvent;
 import com.cqie.deepcover.vote.record.VotingStartedEvent;
+import com.cqie.deepcover.word.record.WordDescriptionSubmittedEvent;
+import com.cqie.deepcover.word.record.WordRoundStartedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -64,6 +68,29 @@ public class AgentEventListener {
                         event.message().content(),
                         event.message().createdAt()
                 )
+        );
+    }
+
+    @EventListener
+    public void onWordRoundStarted(WordRoundStartedEvent event) {
+        agentEventPushService.push(
+                event.roomCode(),
+                AgentEventType.WORD_ROUND_STARTED,
+                new AgentWordRoundStartedPayload(
+                        event.roomCode(),
+                        event.roundNumber(),
+                        event.currentPlayerId(),
+                        event.currentNumber()
+                )
+        );
+    }
+
+    @EventListener
+    public void onWordDescriptionSubmitted(WordDescriptionSubmittedEvent event) {
+        agentEventPushService.push(
+                event.roomCode(),
+                AgentEventType.WORD_DESCRIPTION_SUBMITTED,
+                new AgentWordDescriptionSubmittedPayload(event.roundNumber(), event.description())
         );
     }
 
