@@ -7,17 +7,25 @@ import com.cqie.deepcover.agent.internal.record.AgentRecentMessagesResponse;
 import com.cqie.deepcover.agent.internal.record.AgentRoomStateResponse;
 import com.cqie.deepcover.agent.internal.record.AgentVoteCommand;
 import com.cqie.deepcover.agent.internal.record.AgentVoteStateResponse;
+import com.cqie.deepcover.agent.internal.record.AgentWordDescriptionCommand;
 import com.cqie.deepcover.chat.interfaces.ChatMessageRepository;
 import com.cqie.deepcover.chat.record.ChatMessage;
 import com.cqie.deepcover.chat.record.ChatMessageResponse;
 import com.cqie.deepcover.chat.service.ChatService;
+import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.PlayerType;
+import com.cqie.deepcover.room.record.Player;
 import com.cqie.deepcover.room.record.PlayerSnapshot;
 import com.cqie.deepcover.room.record.RoomSnapshot;
 import com.cqie.deepcover.room.service.RoomService;
 import com.cqie.deepcover.vote.record.VoteResult;
 import com.cqie.deepcover.vote.record.VoteSnapshot;
 import com.cqie.deepcover.vote.service.VoteService;
+import com.cqie.deepcover.word.record.PlayerWordResponse;
+import com.cqie.deepcover.word.record.WordDescriptionResult;
+import com.cqie.deepcover.word.record.WordDescriptionSnapshot;
+import com.cqie.deepcover.word.service.WordDescriptionService;
+import com.cqie.deepcover.word.service.WordGameService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -40,17 +48,23 @@ public class AgentInternalService {
     private final ChatMessageRepository chatMessageRepository;
     private final ChatService chatService;
     private final VoteService voteService;
+    private final WordGameService wordGameService;
+    private final WordDescriptionService wordDescriptionService;
 
     public AgentInternalService(
             RoomService roomService,
             ChatMessageRepository chatMessageRepository,
             ChatService chatService,
-            VoteService voteService
+            VoteService voteService,
+            WordGameService wordGameService,
+            WordDescriptionService wordDescriptionService
     ) {
         this.roomService = roomService;
         this.chatMessageRepository = chatMessageRepository;
         this.chatService = chatService;
         this.voteService = voteService;
+        this.wordGameService = wordGameService;
+        this.wordDescriptionService = wordDescriptionService;
     }
 
     public AgentRoomStateResponse roomState(String roomCode) {
@@ -58,13 +72,16 @@ public class AgentInternalService {
         AgentRoomStateResponse response = new AgentRoomStateResponse(
                 room.roomCode(),
                 room.status(),
+                room.gameMode(),
                 room.topic(),
-                voteService.currentRound(roomCode),
+                currentRound(room),
                 aliveCount(room, PlayerType.HUMAN),
                 aliveCount(room, PlayerType.AI),
                 room.players().stream()
                         .map(player -> new AgentPlayerView(
                                 player.id(),
+                                player.number(),
+                                player.color(),
                                 player.type(),
                                 player.alive(),
                                 player.host()
@@ -74,6 +91,14 @@ public class AgentInternalService {
         log.info("Agent 查询房间状态，roomCode={}, status={}, topicId={}, roundNumber={}, aliveHumanCount={}, aliveAiCount={}",
                 roomCode, response.status(), response.topic() == null ? null : response.topic().id(),
                 response.roundNumber(), response.aliveHumanCount(), response.aliveAiCount());
+        return response;
+    }
+
+    public PlayerWordResponse aiWord(String roomCode, String aiPlayerId) {
+        Player aiPlayer = roomService.requireAliveAiWordParticipant(roomCode, aiPlayerId);
+        PlayerWordResponse response = wordGameService.findPlayerWord(roomService.snapshot(roomCode), aiPlayer.id());
+        log.info("Agent 查询 AI 关键词，roomCode={}, aiPlayerId={}, number={}, color={}",
+                roomCode, aiPlayerId, response.number(), response.color());
         return response;
     }
 
@@ -115,6 +140,14 @@ public class AgentInternalService {
         return response;
     }
 
+    public WordDescriptionSnapshot wordDescriptions(String roomCode) {
+        WordDescriptionSnapshot snapshot = wordDescriptionService.systemSnapshot(roomCode);
+        log.info("Agent 查询关键词描述状态，roomCode={}, roundNumber={}, currentPlayerId={}, currentNumber={}, submittedDescriptionCount={}",
+                roomCode, snapshot.roundNumber(), snapshot.currentPlayerId(), snapshot.currentNumber(),
+                snapshot.descriptions().size());
+        return snapshot;
+    }
+
     public ChatMessageResponse sendMessage(String roomCode, AgentMessageCommand command) {
         ChatMessageResponse response = chatService.sendAiMessage(roomCode, command.aiPlayerId(), command.content());
         log.info("Agent 提交 AI 发言，roomCode={}, aiPlayerId={}, messageId={}, content={}",
@@ -129,10 +162,29 @@ public class AgentInternalService {
         return result;
     }
 
+    public WordDescriptionResult submitWordDescription(String roomCode, AgentWordDescriptionCommand command) {
+        Player aiPlayer = roomService.requireAliveAiWordParticipant(roomCode, command.aiPlayerId());
+        WordDescriptionResult result = wordDescriptionService.submitSystemDescription(
+                roomCode,
+                aiPlayer.id(),
+                command.content()
+        );
+        log.info("Agent 提交 AI 关键词描述，roomCode={}, aiPlayerId={}, roundNumber={}, content={}, votingStarted={}",
+                roomCode, command.aiPlayerId(), result.roundNumber(), result.description().content(), result.votingStarted());
+        return result;
+    }
+
     private long aliveCount(RoomSnapshot room, PlayerType type) {
         return room.players().stream()
                 .filter(player -> player.alive() && player.type() == type)
                 .count();
+    }
+
+    private int currentRound(RoomSnapshot room) {
+        if (room.gameMode() == GameMode.WORD_UNDERCOVER) {
+            return wordGameService.currentRound(room.roomCode());
+        }
+        return voteService.currentRound(room.roomCode());
     }
 
     private int normalizeLimit(Integer limit) {
