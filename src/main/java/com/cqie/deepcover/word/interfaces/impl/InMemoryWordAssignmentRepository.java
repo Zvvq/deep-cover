@@ -2,6 +2,7 @@ package com.cqie.deepcover.word.interfaces.impl;
 
 import com.cqie.deepcover.word.interfaces.WordAssignmentRepository;
 import com.cqie.deepcover.word.record.WordAssignment;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>latestRoundByRoom 记录房间当前轮次，assignments 按 roomCode/round/playerId 保存玩家拿到的词。</p>
  */
 @Repository
+@ConditionalOnProperty(name = "deep-cover.word-assignment.repository", havingValue = "memory", matchIfMissing = true)
 public class InMemoryWordAssignmentRepository implements WordAssignmentRepository {
     private final Map<String, Integer> latestRoundByRoom = new ConcurrentHashMap<>();
     private final Map<String, WordAssignment> assignments = new ConcurrentHashMap<>();

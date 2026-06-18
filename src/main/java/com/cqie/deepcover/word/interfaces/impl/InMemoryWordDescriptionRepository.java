@@ -2,6 +2,7 @@ package com.cqie.deepcover.word.interfaces.impl;
 
 import com.cqie.deepcover.word.interfaces.WordDescriptionRepository;
 import com.cqie.deepcover.word.record.WordDescription;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 import java.util.Comparator;
@@ -16,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>key 使用 roomCode/round/playerId，保证同一轮同一玩家只有一条描述。</p>
  */
 @Repository
+@ConditionalOnProperty(name = "deep-cover.word-description.repository", havingValue = "memory", matchIfMissing = true)
 public class InMemoryWordDescriptionRepository implements WordDescriptionRepository {
     private final Map<String, WordDescription> descriptions = new ConcurrentHashMap<>();
 

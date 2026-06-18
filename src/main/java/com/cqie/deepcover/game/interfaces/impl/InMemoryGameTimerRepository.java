@@ -3,6 +3,7 @@ package com.cqie.deepcover.game.interfaces.impl;
 import com.cqie.deepcover.game.enums.TimerStatus;
 import com.cqie.deepcover.game.interfaces.GameTimerRepository;
 import com.cqie.deepcover.game.record.GameTimer;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 内存版计时器仓库，临时代替 Redis 或数据库。
  */
 @Repository
+@ConditionalOnProperty(name = "deep-cover.game-timer.repository", havingValue = "memory", matchIfMissing = true)
 public class InMemoryGameTimerRepository implements GameTimerRepository {
     private final Map<String, GameTimer> timers = new ConcurrentHashMap<>();
 

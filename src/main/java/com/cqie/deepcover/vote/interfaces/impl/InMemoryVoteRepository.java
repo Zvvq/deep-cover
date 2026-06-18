@@ -3,6 +3,7 @@ package com.cqie.deepcover.vote.interfaces.impl;
 import com.cqie.deepcover.vote.interfaces.VoteRepository;
 import com.cqie.deepcover.vote.record.Vote;
 import com.cqie.deepcover.vote.record.VoteSession;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 import java.util.Comparator;
@@ -15,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 投票模块的内存仓库实现。
  */
 @Repository
+@ConditionalOnProperty(name = "deep-cover.vote.repository", havingValue = "memory", matchIfMissing = true)
 public class InMemoryVoteRepository implements VoteRepository {
     private final Map<String, Vote> votes = new ConcurrentHashMap<>();
     private final Map<String, VoteSession> sessions = new ConcurrentHashMap<>();
