@@ -3,6 +3,8 @@ package com.cqie.deepcover.word.service;
 import com.cqie.deepcover.chat.enums.RoomEventType;
 import com.cqie.deepcover.chat.interfaces.ChatEventPublisher;
 import com.cqie.deepcover.chat.record.RoomEvent;
+import com.cqie.deepcover.redis.lock.NoopRoomLockExecutor;
+import com.cqie.deepcover.redis.lock.RoomLockExecutor;
 import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.RoomErrorCode;
 import com.cqie.deepcover.room.enums.RoomStatus;
@@ -45,6 +47,7 @@ public class WordDescriptionService {
     private final ChatEventPublisher chatEventPublisher;
     private final Clock clock;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final RoomLockExecutor roomLockExecutor;
 
     public WordDescriptionService(
             RoomService roomService,
@@ -56,7 +59,20 @@ public class WordDescriptionService {
     ) {
         this(roomService, wordGameService, wordDescriptionRepository, voteService, chatEventPublisher, clock,
                 event -> {
-                });
+                }, new NoopRoomLockExecutor());
+    }
+
+    public WordDescriptionService(
+            RoomService roomService,
+            WordGameService wordGameService,
+            WordDescriptionRepository wordDescriptionRepository,
+            VoteService voteService,
+            ChatEventPublisher chatEventPublisher,
+            Clock clock,
+            ApplicationEventPublisher applicationEventPublisher
+    ) {
+        this(roomService, wordGameService, wordDescriptionRepository, voteService, chatEventPublisher, clock,
+                applicationEventPublisher, new NoopRoomLockExecutor());
     }
 
     @Autowired
@@ -67,7 +83,8 @@ public class WordDescriptionService {
             VoteService voteService,
             ChatEventPublisher chatEventPublisher,
             Clock clock,
-            ApplicationEventPublisher applicationEventPublisher
+            ApplicationEventPublisher applicationEventPublisher,
+            RoomLockExecutor roomLockExecutor
     ) {
         this.roomService = roomService;
         this.wordGameService = wordGameService;
@@ -76,12 +93,21 @@ public class WordDescriptionService {
         this.chatEventPublisher = chatEventPublisher;
         this.clock = clock;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.roomLockExecutor = roomLockExecutor;
     }
 
     /**
      * 真人玩家提交描述。只有当前序号对应的玩家能提交。
      */
     public synchronized WordDescriptionResult submitDescription(
+            String roomCode,
+            String playerToken,
+            WordDescriptionRequest request
+    ) {
+        return roomLockExecutor.execute(roomCode, () -> submitDescriptionLocked(roomCode, playerToken, request));
+    }
+
+    private WordDescriptionResult submitDescriptionLocked(
             String roomCode,
             String playerToken,
             WordDescriptionRequest request
@@ -94,6 +120,10 @@ public class WordDescriptionService {
      * 系统内部提交描述，预留给后续 AI agent 接入使用。
      */
     public synchronized WordDescriptionResult submitSystemDescription(String roomCode, String playerId, String content) {
+        return roomLockExecutor.execute(roomCode, () -> submitSystemDescriptionLocked(roomCode, playerId, content));
+    }
+
+    private WordDescriptionResult submitSystemDescriptionLocked(String roomCode, String playerId, String content) {
         return submitDescriptionByPlayerId(roomCode, playerId, content);
     }
 

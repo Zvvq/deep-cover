@@ -9,6 +9,8 @@ import com.cqie.deepcover.game.record.GameTimer;
 import com.cqie.deepcover.game.record.GameTimerExpiredEvent;
 import com.cqie.deepcover.game.record.GameTimerSnapshot;
 import com.cqie.deepcover.game.record.TimerExpiredPayload;
+import com.cqie.deepcover.redis.lock.NoopRoomLockExecutor;
+import com.cqie.deepcover.redis.lock.RoomLockExecutor;
 import com.cqie.deepcover.room.enums.RoomErrorCode;
 import com.cqie.deepcover.room.exception.RoomException;
 import org.slf4j.Logger;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 
 /**
  * game timer 的业务服务。
@@ -35,6 +38,7 @@ public class GameTimerService {
     private final GameTimerEventPublisher gameTimerEventPublisher;
     private final Clock clock;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final RoomLockExecutor roomLockExecutor;
 
     public GameTimerService(
             GameTimerRepository gameTimerRepository,
@@ -42,7 +46,16 @@ public class GameTimerService {
             Clock clock
     ) {
         this(gameTimerRepository, gameTimerEventPublisher, clock, event -> {
-        });
+        }, new NoopRoomLockExecutor());
+    }
+
+    public GameTimerService(
+            GameTimerRepository gameTimerRepository,
+            GameTimerEventPublisher gameTimerEventPublisher,
+            Clock clock,
+            ApplicationEventPublisher applicationEventPublisher
+    ) {
+        this(gameTimerRepository, gameTimerEventPublisher, clock, applicationEventPublisher, new NoopRoomLockExecutor());
     }
 
     @Autowired
@@ -50,12 +63,14 @@ public class GameTimerService {
             GameTimerRepository gameTimerRepository,
             GameTimerEventPublisher gameTimerEventPublisher,
             Clock clock,
-            ApplicationEventPublisher applicationEventPublisher
+            ApplicationEventPublisher applicationEventPublisher,
+            RoomLockExecutor roomLockExecutor
     ) {
         this.gameTimerRepository = gameTimerRepository;
         this.gameTimerEventPublisher = gameTimerEventPublisher;
         this.clock = clock;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.roomLockExecutor = roomLockExecutor;
     }
 
     /**
@@ -94,10 +109,7 @@ public class GameTimerService {
         Instant now = clock.instant();
         int expiredCount = 0;
         for (GameTimer timer : gameTimerRepository.findRunningTimers()) {
-            if (timer.dueAt(now)) {
-                GameTimer expiredTimer = timer.expire();
-                gameTimerRepository.save(expiredTimer);
-                publishExpiredEvent(expiredTimer, now);
+            if (timer.dueAt(now) && roomLockExecutor.execute(timer.roomCode(), () -> expireTimerIfDue(timer.roomCode(), now))) {
                 expiredCount++;
             }
         }
@@ -110,6 +122,18 @@ public class GameTimerService {
     private GameTimer findTimer(String roomCode) {
         return gameTimerRepository.findByRoomCode(roomCode)
                 .orElseThrow(() -> new RoomException(RoomErrorCode.TIMER_NOT_FOUND, "Timer not found."));
+    }
+
+    private boolean expireTimerIfDue(String roomCode, Instant now) {
+        Optional<GameTimer> currentTimer = gameTimerRepository.findByRoomCode(roomCode);
+        if (currentTimer.isEmpty() || !currentTimer.get().dueAt(now)) {
+            return false;
+        }
+
+        GameTimer expiredTimer = currentTimer.get().expire();
+        gameTimerRepository.save(expiredTimer);
+        publishExpiredEvent(expiredTimer, now);
+        return true;
     }
 
     private void publishExpiredEvent(GameTimer timer, Instant expiredAt) {

@@ -5,6 +5,8 @@ import com.cqie.deepcover.chat.interfaces.ChatEventPublisher;
 import com.cqie.deepcover.chat.record.RoomEvent;
 import com.cqie.deepcover.game.enums.GamePhase;
 import com.cqie.deepcover.game.service.GameTimerService;
+import com.cqie.deepcover.redis.lock.NoopRoomLockExecutor;
+import com.cqie.deepcover.redis.lock.RoomLockExecutor;
 import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.PlayerType;
 import com.cqie.deepcover.room.enums.RoomErrorCode;
@@ -71,6 +73,7 @@ public class VoteService {
     private final Clock clock;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final WordGameService wordGameService;
+    private final RoomLockExecutor roomLockExecutor;
     private final Random random = new SecureRandom();
 
     public VoteService(
@@ -81,7 +84,7 @@ public class VoteService {
             Clock clock
     ) {
         this(roomService, voteRepository, chatEventPublisher, gameTimerService, clock, event -> {
-        }, defaultWordGameService());
+        }, defaultWordGameService(), new NoopRoomLockExecutor());
     }
 
     public VoteService(
@@ -93,7 +96,7 @@ public class VoteService {
             WordGameService wordGameService
     ) {
         this(roomService, voteRepository, chatEventPublisher, gameTimerService, clock, event -> {
-        }, wordGameService);
+        }, wordGameService, new NoopRoomLockExecutor());
     }
 
     public VoteService(
@@ -105,7 +108,20 @@ public class VoteService {
             ApplicationEventPublisher applicationEventPublisher
     ) {
         this(roomService, voteRepository, chatEventPublisher, gameTimerService, clock, applicationEventPublisher,
-                defaultWordGameService());
+                defaultWordGameService(), new NoopRoomLockExecutor());
+    }
+
+    public VoteService(
+            RoomService roomService,
+            VoteRepository voteRepository,
+            ChatEventPublisher chatEventPublisher,
+            GameTimerService gameTimerService,
+            Clock clock,
+            ApplicationEventPublisher applicationEventPublisher,
+            WordGameService wordGameService
+    ) {
+        this(roomService, voteRepository, chatEventPublisher, gameTimerService, clock, applicationEventPublisher,
+                wordGameService, new NoopRoomLockExecutor());
     }
 
     @Autowired
@@ -116,7 +132,8 @@ public class VoteService {
             GameTimerService gameTimerService,
             Clock clock,
             ApplicationEventPublisher applicationEventPublisher,
-            WordGameService wordGameService
+            WordGameService wordGameService,
+            RoomLockExecutor roomLockExecutor
     ) {
         this.roomService = roomService;
         this.voteRepository = voteRepository;
@@ -125,12 +142,17 @@ public class VoteService {
         this.clock = clock;
         this.applicationEventPublisher = applicationEventPublisher;
         this.wordGameService = wordGameService;
+        this.roomLockExecutor = roomLockExecutor;
     }
 
     /**
      * 聊天计时结束后进入投票阶段。
      */
     public synchronized VoteSnapshot startVoting(String roomCode) {
+        return roomLockExecutor.execute(roomCode, () -> startVotingLocked(roomCode));
+    }
+
+    private VoteSnapshot startVotingLocked(String roomCode) {
         RoomSnapshot room = roomService.snapshot(roomCode);
         if (room.status() == RoomStatus.VOTING) {
             log.info("房间已处于投票阶段，直接返回当前投票状态，roomCode={}", roomCode);
@@ -165,6 +187,10 @@ public class VoteService {
      * 真人玩家提交投票。
      */
     public synchronized VoteResult castVote(String roomCode, String playerToken, VoteRequest request) {
+        return roomLockExecutor.execute(roomCode, () -> castVoteLocked(roomCode, playerToken, request));
+    }
+
+    private VoteResult castVoteLocked(String roomCode, String playerToken, VoteRequest request) {
         Player voter = roomService.requireVotingParticipant(roomCode, playerToken);
         return castVoteByPlayer(roomCode, voter.id(), voter.type(), request == null ? null : request.targetPlayerId());
     }
@@ -173,6 +199,10 @@ public class VoteService {
      * 系统内部提交 AI 投票。
      */
     public synchronized VoteResult castSystemVote(String roomCode, String voterPlayerId, String targetPlayerId) {
+        return roomLockExecutor.execute(roomCode, () -> castSystemVoteLocked(roomCode, voterPlayerId, targetPlayerId));
+    }
+
+    private VoteResult castSystemVoteLocked(String roomCode, String voterPlayerId, String targetPlayerId) {
         Player voter = roomService.requireAliveAiVotingParticipant(roomCode, voterPlayerId);
         return castVoteByPlayer(roomCode, voter.id(), voter.type(), targetPlayerId);
     }
@@ -200,6 +230,10 @@ public class VoteService {
      * 投票计时结束，或所有存活玩家都投完时，调用这里结算。
      */
     public synchronized VoteResult settleVoting(String roomCode) {
+        return roomLockExecutor.execute(roomCode, () -> settleVotingLocked(roomCode));
+    }
+
+    private VoteResult settleVotingLocked(String roomCode) {
         RoomSnapshot room = roomService.snapshot(roomCode);
         if (room.status() != RoomStatus.VOTING) {
             log.info("结算投票时房间不在投票阶段，跳过结算，roomCode={}, status={}", roomCode, room.status());

@@ -8,6 +8,8 @@ import com.cqie.deepcover.chat.record.ChatMessageCreatedEvent;
 import com.cqie.deepcover.chat.record.ChatMessageRequest;
 import com.cqie.deepcover.chat.record.ChatMessageResponse;
 import com.cqie.deepcover.chat.record.RoomEvent;
+import com.cqie.deepcover.redis.lock.NoopRoomLockExecutor;
+import com.cqie.deepcover.redis.lock.RoomLockExecutor;
 import com.cqie.deepcover.room.enums.RoomErrorCode;
 import com.cqie.deepcover.room.exception.RoomException;
 import com.cqie.deepcover.room.record.Player;
@@ -37,6 +39,7 @@ public class ChatService {
     private final ChatMessageRepository chatMessageRepository;
     private final ChatEventPublisher chatEventPublisher;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final RoomLockExecutor roomLockExecutor;
 
     public ChatService(
             RoomService roomService,
@@ -44,7 +47,17 @@ public class ChatService {
             ChatEventPublisher chatEventPublisher
     ) {
         this(roomService, chatMessageRepository, chatEventPublisher, event -> {
-        });
+        }, new NoopRoomLockExecutor());
+    }
+
+    public ChatService(
+            RoomService roomService,
+            ChatMessageRepository chatMessageRepository,
+            ChatEventPublisher chatEventPublisher,
+            ApplicationEventPublisher applicationEventPublisher
+    ) {
+        this(roomService, chatMessageRepository, chatEventPublisher, applicationEventPublisher,
+                new NoopRoomLockExecutor());
     }
 
     @Autowired
@@ -52,18 +65,24 @@ public class ChatService {
             RoomService roomService,
             ChatMessageRepository chatMessageRepository,
             ChatEventPublisher chatEventPublisher,
-            ApplicationEventPublisher applicationEventPublisher
+            ApplicationEventPublisher applicationEventPublisher,
+            RoomLockExecutor roomLockExecutor
     ) {
         this.roomService = roomService;
         this.chatMessageRepository = chatMessageRepository;
         this.chatEventPublisher = chatEventPublisher;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.roomLockExecutor = roomLockExecutor;
     }
 
     /**
      * 真人玩家发送聊天消息。
      */
     public ChatMessageResponse sendMessage(String roomCode, ChatMessageRequest request) {
+        return roomLockExecutor.execute(roomCode, () -> sendMessageLocked(roomCode, request));
+    }
+
+    private ChatMessageResponse sendMessageLocked(String roomCode, ChatMessageRequest request) {
         if (request == null) {
             throw new RoomException(RoomErrorCode.INVALID_CHAT_MESSAGE, "Chat message cannot be empty.");
         }
@@ -77,6 +96,10 @@ public class ChatService {
      * AI 决策模块使用的内部发言入口。
      */
     public ChatMessageResponse sendAiMessage(String roomCode, String aiPlayerId, String content) {
+        return roomLockExecutor.execute(roomCode, () -> sendAiMessageLocked(roomCode, aiPlayerId, content));
+    }
+
+    private ChatMessageResponse sendAiMessageLocked(String roomCode, String aiPlayerId, String content) {
         String normalizedContent = normalizeContent(content);
         Player sender = roomService.requireAliveAiChatParticipant(roomCode, aiPlayerId);
 

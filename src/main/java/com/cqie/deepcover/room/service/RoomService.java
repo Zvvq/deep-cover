@@ -1,5 +1,7 @@
 package com.cqie.deepcover.room.service;
 
+import com.cqie.deepcover.redis.lock.NoopRoomLockExecutor;
+import com.cqie.deepcover.redis.lock.RoomLockExecutor;
 import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.PlayerType;
 import com.cqie.deepcover.room.enums.RoomErrorCode;
@@ -49,15 +51,16 @@ public class RoomService {
     private final ApplicationEventPublisher eventPublisher;
     private final TopicService topicService;
     private final WordGameService wordGameService;
+    private final RoomLockExecutor roomLockExecutor;
     private final Random random = new SecureRandom();
 
     public RoomService(RoomRepository roomRepository) {
         this(roomRepository, event -> {
-        }, defaultTopicService(), defaultWordGameService());
+        }, defaultTopicService(), defaultWordGameService(), new NoopRoomLockExecutor());
     }
 
     public RoomService(RoomRepository roomRepository, ApplicationEventPublisher eventPublisher) {
-        this(roomRepository, eventPublisher, defaultTopicService(), defaultWordGameService());
+        this(roomRepository, eventPublisher, defaultTopicService(), defaultWordGameService(), new NoopRoomLockExecutor());
     }
 
     public RoomService(
@@ -65,7 +68,16 @@ public class RoomService {
             ApplicationEventPublisher eventPublisher,
             TopicService topicService
     ) {
-        this(roomRepository, eventPublisher, topicService, defaultWordGameService());
+        this(roomRepository, eventPublisher, topicService, defaultWordGameService(), new NoopRoomLockExecutor());
+    }
+
+    public RoomService(
+            RoomRepository roomRepository,
+            ApplicationEventPublisher eventPublisher,
+            TopicService topicService,
+            WordGameService wordGameService
+    ) {
+        this(roomRepository, eventPublisher, topicService, wordGameService, new NoopRoomLockExecutor());
     }
 
     @Autowired
@@ -73,12 +85,14 @@ public class RoomService {
             RoomRepository roomRepository,
             ApplicationEventPublisher eventPublisher,
             TopicService topicService,
-            WordGameService wordGameService
+            WordGameService wordGameService,
+            RoomLockExecutor roomLockExecutor
     ) {
         this.roomRepository = roomRepository;
         this.eventPublisher = eventPublisher;
         this.topicService = topicService;
         this.wordGameService = wordGameService;
+        this.roomLockExecutor = roomLockExecutor;
     }
 
     /**
@@ -105,6 +119,10 @@ public class RoomService {
      * 等待阶段允许真人加入；游戏开始后不能再加入。
      */
     public synchronized RoomJoinResult joinRoom(String roomCode) {
+        return roomLockExecutor.execute(roomCode, () -> joinRoomLocked(roomCode));
+    }
+
+    private RoomJoinResult joinRoomLocked(String roomCode) {
         Room room = findRoom(roomCode);
         if (room.status() != RoomStatus.WAITING) {
             throw new RoomException(RoomErrorCode.ROOM_NOT_JOINABLE, "Room is not joinable.");
@@ -129,6 +147,10 @@ public class RoomService {
      * 房主开始游戏：补齐默认 AI 玩家，然后按玩法进入聊天阶段或描述阶段。
      */
     public synchronized RoomSnapshot startRoom(String roomCode, String playerToken) {
+        return roomLockExecutor.execute(roomCode, () -> startRoomLocked(roomCode, playerToken));
+    }
+
+    private RoomSnapshot startRoomLocked(String roomCode, String playerToken) {
         Room room = findRoom(roomCode);
         Player requester = findPlayer(room, playerToken);
         if (!requester.host()) {
@@ -170,6 +192,10 @@ public class RoomService {
      * 房主离开直接销毁房间，非房主离开则只移除自己。
      */
     public synchronized RoomSnapshot leaveRoom(String roomCode, String playerToken) {
+        return roomLockExecutor.execute(roomCode, () -> leaveRoomLocked(roomCode, playerToken));
+    }
+
+    private RoomSnapshot leaveRoomLocked(String roomCode, String playerToken) {
         Room room = findRoom(roomCode);
         Player player = findPlayer(room, playerToken);
         if (player.host()) {
@@ -277,6 +303,10 @@ public class RoomService {
     }
 
     public synchronized RoomSnapshot markVoting(String roomCode) {
+        return roomLockExecutor.execute(roomCode, () -> markVotingLocked(roomCode));
+    }
+
+    private RoomSnapshot markVotingLocked(String roomCode) {
         Room room = findRoom(roomCode);
         room.markVoting();
         roomRepository.save(room);
@@ -285,6 +315,10 @@ public class RoomService {
     }
 
     public synchronized RoomSnapshot markChatting(String roomCode) {
+        return roomLockExecutor.execute(roomCode, () -> markChattingLocked(roomCode));
+    }
+
+    private RoomSnapshot markChattingLocked(String roomCode) {
         Room room = findRoom(roomCode);
         room.markChatting();
         roomRepository.save(room);
@@ -293,6 +327,10 @@ public class RoomService {
     }
 
     public synchronized RoomSnapshot markDescribing(String roomCode) {
+        return roomLockExecutor.execute(roomCode, () -> markDescribingLocked(roomCode));
+    }
+
+    private RoomSnapshot markDescribingLocked(String roomCode) {
         Room room = findRoom(roomCode);
         room.markDescribing();
         roomRepository.save(room);
@@ -301,6 +339,10 @@ public class RoomService {
     }
 
     public synchronized RoomSnapshot markChattingWithNewTopic(String roomCode) {
+        return roomLockExecutor.execute(roomCode, () -> markChattingWithNewTopicLocked(roomCode));
+    }
+
+    private RoomSnapshot markChattingWithNewTopicLocked(String roomCode) {
         Room room = findRoom(roomCode);
         assignNewTopic(room);
         room.markChatting();
@@ -311,6 +353,10 @@ public class RoomService {
     }
 
     public synchronized RoomSnapshot markEnded(String roomCode) {
+        return roomLockExecutor.execute(roomCode, () -> markEndedLocked(roomCode));
+    }
+
+    private RoomSnapshot markEndedLocked(String roomCode) {
         Room room = findRoom(roomCode);
         room.markEnded();
         roomRepository.save(room);
@@ -319,6 +365,10 @@ public class RoomService {
     }
 
     public synchronized RoomSnapshot eliminatePlayer(String roomCode, String playerId) {
+        return roomLockExecutor.execute(roomCode, () -> eliminatePlayerLocked(roomCode, playerId));
+    }
+
+    private RoomSnapshot eliminatePlayerLocked(String roomCode, String playerId) {
         Room room = findRoom(roomCode);
         Player player = findPlayerById(room, playerId);
         requireAlive(player);
