@@ -236,6 +236,8 @@ java -jar target/deep-cover-0.0.1-SNAPSHOT.jar
 
 Agent 服务不可用时，系统会自动降级：发言失败则跳过 AI 消息，投票失败则随机选择合法目标。
 
+> Agent 端项目：[https://github.com/Zvvq/deep-cover-agent](https://github.com/Zvvq/deep-cover-agent)
+
 ## 游戏规则
 
 ### 聊天卧底模式（CHAT_UNDERCOVER）
