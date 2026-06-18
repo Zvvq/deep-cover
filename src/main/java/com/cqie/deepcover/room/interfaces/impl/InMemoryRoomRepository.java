@@ -2,6 +2,7 @@ package com.cqie.deepcover.room.interfaces.impl;
 
 import com.cqie.deepcover.room.interfaces.RoomRepository;
 import com.cqie.deepcover.room.model.Room;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 import java.security.SecureRandom;
@@ -12,6 +13,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
+@ConditionalOnProperty(name = "deep-cover.room.repository", havingValue = "memory")
 public class InMemoryRoomRepository implements RoomRepository {
     private static final char[] ROOM_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".toCharArray();
     private static final int ROOM_CODE_LENGTH = 6;

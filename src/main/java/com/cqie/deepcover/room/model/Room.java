@@ -4,6 +4,7 @@ import com.cqie.deepcover.room.enums.GameMode;
 import com.cqie.deepcover.room.enums.PlayerType;
 import com.cqie.deepcover.room.enums.RoomStatus;
 import com.cqie.deepcover.room.record.Player;
+import com.cqie.deepcover.room.record.RoomDocument;
 import com.cqie.deepcover.topic.record.TopicSnapshot;
 
 import java.util.ArrayList;
@@ -56,6 +57,42 @@ public class Room {
 
     public static Room createWaiting(String roomCode, Player host, GameMode gameMode) {
         return new Room(roomCode, host, gameMode);
+    }
+
+    /**
+     * 从持久化文档重建房间对象，仅供仓库层反序列化使用。
+     *
+     * <p>直接使用存储的完整玩家列表替换内部列表，并按存储的状态字段还原生命周期阶段。</p>
+     */
+    public static Room reconstitute(RoomDocument doc) {
+        Player host = doc.players().stream()
+                .filter(Player::host)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No host player found in document."));
+
+        Room room = new Room(doc.roomCode(), host, doc.gameMode());
+        // 用文档中的完整玩家列表替换构造器自动添加的单一房主
+        room.players.clear();
+        room.players.addAll(doc.players());
+        room.status = doc.status();
+        if (doc.topic() != null) {
+            room.topic = doc.topic();
+        }
+        return room;
+    }
+
+    /**
+     * 生成用于持久化的数据传输对象。
+     */
+    public RoomDocument toDocument() {
+        return new RoomDocument(
+                roomCode,
+                hostPlayerId,
+                gameMode,
+                new ArrayList<>(players),
+                status,
+                topic
+        );
     }
 
     public String roomCode() {
