@@ -10,7 +10,7 @@ export function useRoomApi(sessionState, apiBase = '/api/rooms') {
     try {
       response = await fetch(path, options);
     } catch {
-      throw new Error('????????????');
+      throw new Error('\u7f51\u7edc\u8fde\u63a5\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
     }
 
     if (!response.ok) {
@@ -20,7 +20,7 @@ export function useRoomApi(sessionState, apiBase = '/api/rooms') {
       } catch {
         errorBody = null;
       }
-      const error = new Error(errorBody?.message || `???? (${response.status})`);
+      const error = new Error(errorBody?.message || `\u8bf7\u6c42\u5931\u8d25 (${response.status})`);
       error.code = errorBody?.errorCode;
       throw error;
     }

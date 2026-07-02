@@ -17,6 +17,7 @@ const sourceMain = source('src/main.js');
 const apiSource = source('src/composables/useRoomApi.js');
 const sessionSource = source('src/composables/useRoomSession.js');
 const labelSource = source('src/domain/labels.js');
+const colorSource = source('src/domain/playerColors.js');
 const homeView = source('src/components/HomeView.vue');
 const waitingView = source('src/components/WaitingRoomView.vue');
 const playerList = source('src/components/PlayerList.vue');
@@ -35,6 +36,14 @@ assert.match(packageJson, /"@stomp\/stompjs"\s*:/, 'package.json declares the ST
 assert.match(viteConfig, /src\/main\/resources\/static/, 'Vite builds into Spring static resources');
 assert.match(sourceHtml, /id="app"/, 'Vue source HTML has an app mount point');
 assert.match(sourceHtml, /\/api\/rooms/, 'Vue source HTML preserves the API base marker');
+for (const [name, content] of [
+  ['source HTML', sourceHtml],
+  ['labels', labelSource],
+  ['player colors', colorSource],
+  ['room API', apiSource],
+]) {
+  assert.doesNotMatch(content, /\?{2,}/, name + ' does not contain replacement question marks');
+}
 assert.match(sourceMain, /createApp\(App\)/, 'Vue app bootstraps with createApp');
 assert.match(appVue, /HomeView/, 'App renders the home view component');
 assert.match(appVue, /WaitingRoomView/, 'App renders the waiting room component');
@@ -94,5 +103,6 @@ const builtHtmlPath = new URL('index.html', staticDir);
 assert.ok(existsSync(builtHtmlPath), 'Vite build emits Spring static index.html');
 const builtHtml = readFileSync(builtHtmlPath, 'utf8');
 assert.match(builtHtml, /Deep Cover/, 'built HTML keeps product name');
+assert.doesNotMatch(builtHtml, /\?{2,}/, 'built HTML does not contain replacement question marks');
 assert.match(builtHtml, /type="module"/, 'built HTML uses Vite module assets');
 assert.doesNotMatch(builtHtml, /app\.js\?v=/, 'built HTML no longer references the old app.js cache key');
