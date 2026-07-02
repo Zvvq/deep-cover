@@ -28,3 +28,19 @@ const builtHtml = readFileSync(builtHtmlPath, 'utf8');
 assert.match(builtHtml, /Deep Cover/, 'built HTML keeps product name');
 assert.match(builtHtml, /type="module"/, 'built HTML uses Vite module assets');
 assert.doesNotMatch(builtHtml, /app\.js\?v=/, 'built HTML no longer references the old app.js cache key');
+
+const apiSource = readFileSync(new URL('src/composables/useRoomApi.js', frontendDir), 'utf8');
+const sessionSource = readFileSync(new URL('src/composables/useRoomSession.js', frontendDir), 'utf8');
+const labelSource = readFileSync(new URL('src/domain/labels.js', frontendDir), 'utf8');
+
+for (const endpoint of ['/api/rooms', '/messages', '/timer', '/votes', '/word/me', '/word/descriptions']) {
+  assert.match(apiSource, new RegExp(endpoint.replaceAll('/', '\\/')), `REST client contains ${endpoint}`);
+}
+
+for (const key of ['dc_roomCode', 'dc_playerId', 'dc_playerToken']) {
+  assert.match(sessionSource, new RegExp(key), `session keeps ${key}`);
+}
+
+for (const label of ['CHAT_UNDERCOVER', 'WORD_UNDERCOVER', 'DESCRIBING', 'CHATTING', 'VOTING', 'ENDED']) {
+  assert.match(labelSource, new RegExp(label), `labels include ${label}`);
+}
